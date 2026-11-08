@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Android 13+ 发系统通知要运行时授权 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 开机后自动恢复监听（否则重启手机后就再也收不到完成通知） -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 保活：后台也要能收到「会话跑完了」，否则进程被冻结就收不到 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -100,6 +102,16 @@
             android:foregroundServiceType="dataSync" />
 
     
+        <!-- 开机后把保活服务拉回来：只补「重启之后通知就不来了」这一段。 -->
+        <receiver
+            android:name=".notify.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
         <!-- 审批通知的两个动作按钮。用广播而不是 Activity：点「允许」不该把
              App 拉到前台 —— 用户的意图只是让 agent 继续跑。 -->
         <receiver
