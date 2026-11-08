@@ -804,7 +804,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         autoPickAddress()
 
         startLoadTimeout()
-        webView.loadUrl(entry)
+        webView.loadUrl(entry, themeHeaders())
     }
 
     /**
@@ -827,7 +827,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val cm = CookieManager.getInstance()
                     result.cookies.forEach { cm.setCookie(entry, it) }
                     cm.flush()
-                    webView.loadUrl(entry)
+                    webView.loadUrl(entry, themeHeaders())
                 } else {
                     // 握手失败就退回普通 reload，至少让页面自己把错误显示出来
                     webView.reload()
@@ -870,7 +870,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         ui = ui.copy(panelOpen = false, screen = Screen.Dsh, dshReady = false, dshError = null)
         if (loaded) {
             // 页面已就绪：直接写 localStorage 再 reload
-            webView.evaluateJavascript(setCurrentSessionJs(sessionId), null)
+            // 已经是这个会话就别再 reload 一遍（reload 是「进会话要等很久」的主因）
+            val same = prefs.lastSessionId() == sessionId
+            if (!same) webView.evaluateJavascript(setCurrentSessionJs(sessionId), null)
             prefs.setLastSessionId(sessionId)   // 供「继续最近」用
         } else {
             // 冷启动还没载入 —— localStorage 要等 origin 就绪才写得进去
@@ -902,6 +904,22 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         val q = org.json.JSONObject.quote(sessionId)
         return "(function(){try{localStorage.setItem('dsh.sessions.current'," +
             "JSON.stringify({sessionId:$q}));location.reload();}catch(e){}})();"
+    }
+
+    /** 把当前系统的深浅色带给 WebView（header 由代理注入成页面里的 matchMedia 补丁）。 */
+    private fun isDarkNow(): Boolean =
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    private fun themeHeaders(): Map<String, String> =
+        mapOf("X-Fnh-Theme" to if (isDarkNow()) "dark" else "light")
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 系统切深色/浅色时 DSH 页面必须重新取一次，否则它还按旧主题渲染。
+        val entry = prefs.entryUrl()
+        if (entry.isEmpty() || !loaded) return
+        webView.loadUrl(entry, themeHeaders())
     }
 
     private fun startWatching() {
@@ -1389,7 +1407,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             // 新造的、或者地址变了：真真正正导航一次
             ui = ui.copy(screen = Screen.Dsh, dshReady = false, dshError = null)
             startLoadTimeout()
-            webView.loadUrl(entry)
+            webView.loadUrl(entry, themeHeaders())
             return
         }
 

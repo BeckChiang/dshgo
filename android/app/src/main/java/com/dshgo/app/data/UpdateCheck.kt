@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
 object UpdateCheck {
 
     /** 官方下载地址（release 资产名固定，这条链接长期有效）。 */
-    const val APK_URL = "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk"
+    const val APK_URL = "https://github.com/BeckChiang/dshgo/releases/latest/download/fnh-go.apk"
 
     /**
      * jsDelivr 的**包元数据接口** —— 返回仓库的全部 tag。
@@ -44,16 +44,16 @@ object UpdateCheck {
      * 全程 jsDelivr，国内可达。
      */
     private const val JSDELIVR_META =
-        "https://data.jsdelivr.com/v1/packages/gh/xiazhi88/dshgo"
+        "https://data.jsdelivr.com/v1/packages/gh/BeckChiang/dshgo"
 
     /** 镜像 tag 的命名：`dist-v<版本>`。见 tools/publish-dist.sh。 */
     private const val TAG_PREFIX = "dist-v"
 
     private fun cdnApk(version: String) =
-        "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@$TAG_PREFIX$version/dshgo-app.apk"
+        "https://cdn.jsdelivr.net/gh/BeckChiang/dshgo@$TAG_PREFIX$version/fnh-go.apk"
 
     private const val LATEST_API =
-        "https://api.github.com/repos/xiazhi88/dshgo/releases/latest"
+        "https://api.github.com/repos/BeckChiang/dshgo/releases/latest"
 
     /**
      * npmmirror（阿里托管的 npm 国内镜像）上的包元数据。

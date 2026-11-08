@@ -251,7 +251,14 @@ class DshWidgetProvider : AppWidgetProvider() {
                 }
             }
 
-            // 底部小字：DeepSeek 现在高峰还是低峰。拿不到就整行隐藏——不写「未知」占位。
+            // 左下角：正在跑的会话总数；右下角：DeepSeek 高峰/低峰。拿不到就不写占位。
+            val running = summary.running
+            if (running > 0) {
+                setViewVisibility(R.id.widget_running, View.VISIBLE)
+                setTextViewText(R.id.widget_running, "$running 个在跑")
+            } else {
+                setViewVisibility(R.id.widget_running, View.GONE)
+            }
             val pricing = state?.pricingLabel?.trim().orEmpty()
             if (pricing.isEmpty()) {
                 setViewVisibility(R.id.widget_footer, View.GONE)
@@ -304,13 +311,8 @@ class DshWidgetProvider : AppWidgetProvider() {
 
         /** 「¥ 146.59」：整数部分不补零，小数固定两位。 */
         private fun money(balance: WidgetState.Balance): String {
-            val symbol = when (balance.currency.uppercase(Locale.US)) {
-                "CNY", "RMB" -> "¥"
-                "USD" -> "$"
-                "EUR" -> "€"
-                else -> balance.currency.uppercase(Locale.US)
-            }
-            return "$symbol " + String.format(Locale.US, "%.2f", balance.amount)
+            // 只保留数字：货币符号与「余额」标签都在布局里拿掉了，多一个字符就少一分可读性。
+            return String.format(Locale.US, "%.2f", balance.amount)
         }
 
         private fun nextWorkspace(ctx: Context): PendingIntent {

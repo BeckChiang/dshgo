@@ -4,8 +4,7 @@
 
   RemoteViews 只支持有限的一组视图，且**不能**用 <View>/<Space> 占位，
   所以所有「空隙」都用带 weight 的空 TextView，分割线用 1dp 高的 TextView。
-  颜色全部走 @color 资源：res/values-night 下有同名定义，系统深色模式自动切换，
-  代码里不需要判断 uiMode。
+  颜色全部走 @color 资源：res/values-night 下有同名定义，系统深色模式自动切换。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -14,30 +13,33 @@
     android:background="@drawable/widget_card"
     android:orientation="vertical"
     android:paddingStart="14dp"
-    android:paddingTop="12dp"
+    android:paddingTop="9dp"
     android:paddingEnd="14dp"
-    android:paddingBottom="12dp">
+    android:paddingBottom="9dp">
 
-    <!-- 头部：鲸鱼 + 工作区切换条（每个工作区一个胶囊，点谁切谁） / 右侧余额 -->
+    <!-- 头部：鲸鱼 + 工作区切换条（点谁切谁） / 右侧刷新 + 余额 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
+        android:baselineAligned="false"
         android:orientation="horizontal">
 
         <ImageView
             android:id="@+id/widget_whale"
-            android:layout_width="17dp"
-            android:layout_height="17dp"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_gravity="center_vertical"
             android:layout_marginEnd="7dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_whale" />
 
-        <!-- 工作区切换条：由一个 chip 换成一排 chip，工作区多了也点得到 -->
+        <!-- 工作区切换条：一个工作区一枚胶囊，点谁切谁 -->
         <LinearLayout
             android:id="@+id/widget_chips"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
             android:gravity="center_vertical"
             android:orientation="horizontal" />
 
@@ -59,58 +61,40 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
-        <!-- 弹性空隙：RemoteViews 不支持 Space，用空 TextView 顶开余额 -->
+        <!-- 弹性空隙：RemoteViews 不支持 Space，用空 TextView 顶开 -->
         <TextView
             android:layout_width="0dp"
             android:layout_height="1dp"
             android:layout_weight="1" />
 
-        <!-- 手动刷新：点一下强制拉一次快照（15s 心跳之外的手动档） -->
+        <!-- 手动刷新：点一下强制拉一次快照 -->
         <ImageView
             android:id="@+id/widget_refresh"
             android:layout_width="18dp"
             android:layout_height="18dp"
             android:layout_gravity="center_vertical"
-            android:layout_marginEnd="6dp"
+            android:layout_marginEnd="8dp"
             android:contentDescription="@string/widget_refresh_desc"
             android:src="@drawable/ic_widget_refresh" />
 
-        <LinearLayout
-            android:id="@+id/widget_balance_box"
+        <!-- 余额：只显示数字，不带货币符号与「余额」标签 -->
+        <TextView
+            android:id="@+id/widget_balance_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="end"
-            android:orientation="vertical">
+            android:layout_gravity="center_vertical"
+            android:singleLine="true"
+            android:textColor="@color/wg_title"
+            android:textSize="15sp"
+            android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/widget_balance_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/widget_balance"
-                android:textColor="@color/wg_balance_label"
-                android:textSize="9sp" />
-
-            <TextView
-                android:id="@+id/widget_balance_value"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:singleLine="true"
-                android:textColor="@color/wg_title"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-            <!-- 高峰/低峰小字：由 provider 填，副标题为空时隐藏 -->
-    <TextView
-        android:id="@+id/widget_footer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:textColor="@color/wg_detail"
-        android:textSize="9.5sp"
-        android:visibility="gone" />
-
-</LinearLayout>
+        <!-- 隐藏占位，避免旧布局 id 丢失导致 provider 引用失败 -->
+        <LinearLayout
+            android:id="@+id/widget_balance_box"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:orientation="horizontal"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- 会话行容器：由 provider 用 addView 逐条塞进 widget_dsh_row -->
@@ -118,7 +102,7 @@
         android:id="@+id/widget_rows"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="7dp"
+        android:layout_marginTop="4dp"
         android:orientation="vertical" />
 
     <!-- 没有可显示的数据时的降级文案（不显示 0 / 假数据） -->
@@ -126,11 +110,51 @@
         android:id="@+id/widget_fallback"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:ellipsize="end"
         android:lineSpacingExtra="2dp"
         android:maxLines="2"
         android:textColor="@color/wg_detail"
         android:textSize="11.5sp"
         android:visibility="gone" />
+
+    <!-- 弹性空隙：把底栏压到卡片最下方 -->
+    <TextView
+        android:layout_width="1dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- 底栏：左边「N 个在跑」，右边「高峰 / 低峰」 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_running"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:textColor="@color/wg_detail"
+            android:textSize="9.5sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/widget_footer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:textColor="@color/wg_detail"
+            android:textSize="9.5sp"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>
