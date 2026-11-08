@@ -887,6 +887,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         } else {
             // 冷启动还没载入 —— localStorage 要等 origin 就绪才写得进去
             pendingSessionId = sessionId
+            // 关键：这里必须真发起一次加载，否则遮罩会一直等一个从没发出去的请求，
+            // 连 12 秒超时都不会触发（startLoadTimeout 也没启动）。
+            // 走 gateThenLoad 而不是 loadDsh，是为了先问「要不要解锁」——
+            // 之前点刷新才弹解锁页，就是因为只有刷新那条路做了这个检查。
+            val entry = prefs.entryUrl()
+            if (entry.isEmpty()) {
+                ui = ui.copy(screen = Screen.Setup, dshReady = false)
+            } else {
+                startLoadTimeout()
+                gateThenLoad(entry)
+            }
         }
     }
 
