@@ -251,9 +251,14 @@ class DshWidgetProvider : AppWidgetProvider() {
                 }
             }
 
-            // 左下角：正在跑的会话总数；右下角：DeepSeek 高峰/低峰。拿不到就不写占位。
+            // 左下角：待审批优先，其次正在跑的会话总数；右下角：DeepSeek 高峰/低峰。
+            // 审批是要人动手的事，比"在跑几个"更该被看见，所以它抢占这一格。
+            val approvals = summary.approvals
             val running = summary.running
-            if (running > 0) {
+            if (approvals > 0) {
+                setViewVisibility(R.id.widget_running, View.VISIBLE)
+                setTextViewText(R.id.widget_running, "$approvals 个待审批")
+            } else if (running > 0) {
                 setViewVisibility(R.id.widget_running, View.VISIBLE)
                 setTextViewText(R.id.widget_running, "$running 个在跑")
             } else {

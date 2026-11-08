@@ -877,12 +877,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** 跳到指定会话。 */
     private fun openSessionFromNotice(sessionId: String) {
+        // 已经在看这个会话：直接回到前台，**不要**再动加载状态。
+        // 之前是先置 dshReady = false 再判断 same，于是「同一个对话重复进入」时
+        // 既不 reload 也永远等不到 onPageFinished —— 遮罩一直转，只能手动刷新才回来。
+        if (loaded && prefs.lastSessionId() == sessionId) {
+            ui = ui.copy(panelOpen = false, screen = Screen.Dsh, dshError = null)
+            return
+        }
         ui = ui.copy(panelOpen = false, screen = Screen.Dsh, dshReady = false, dshError = null)
         if (loaded) {
-            // 页面已就绪：直接写 localStorage 再 reload
-            // 已经是这个会话就别再 reload 一遍（reload 是「进会话要等很久」的主因）
-            val same = prefs.lastSessionId() == sessionId
-            if (!same) webView.evaluateJavascript(setCurrentSessionJs(sessionId), null)
+            // 页面已就绪但换了一个会话：写 localStorage 再 reload
+            webView.evaluateJavascript(setCurrentSessionJs(sessionId), null)
             prefs.setLastSessionId(sessionId)   // 供「继续最近」用
         } else {
             // 冷启动还没载入 —— localStorage 要等 origin 就绪才写得进去
