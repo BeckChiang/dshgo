@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 object WidgetRefresher {
 
     /** 同一时刻只允许一个在飞；两次主动刷新至少隔 3s（切工作区是强制刷新，不受限）。 */
-    private const val MIN_INTERVAL_MS = 3_000L
+    private const val MIN_INTERVAL_MS = 1_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var inFlight: Job? = null

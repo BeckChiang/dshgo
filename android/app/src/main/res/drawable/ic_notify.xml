@@ -1,26 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  通知栏小图标：必须是纯白剪影（系统只取 alpha），所以这里用填充而不是描边。
+  造型与启动图标一致：字母 F + 终端提示符 >。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- F 的竖笔 -->
     <path
-        android:pathData="M34,33 h40 a9,9 0 0 1 9,9 v24 a9,9 0 0 1 -9,9 h-40 a9,9 0 0 1 -9,-9 v-24 a9,9 0 0 1 9,-9 z"
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="9"
-        android:strokeLineJoin="round" />
+        android:pathData="M38,32 h10 v44 h-10 z"
+        android:fillColor="#FFFFFFFF" />
+    <!-- F 的上横 -->
     <path
-        android:pathData="M43,47 L52,55 L43,63"
+        android:pathData="M38,32 h34 v10 h-34 z"
+        android:fillColor="#FFFFFFFF" />
+    <!-- F 的中横 -->
+    <path
+        android:pathData="M38,51 h24 v9 h-24 z"
+        android:fillColor="#FFFFFFFF" />
+    <!-- 终端提示符 > -->
+    <path
+        android:pathData="M66,52 L77,60.5 L66,69"
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="8"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
-    <path
-        android:pathData="M60,63 L70,63"
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="9"
-        android:strokeLineCap="round" />
 </vector>

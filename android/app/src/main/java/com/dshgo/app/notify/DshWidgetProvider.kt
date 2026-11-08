@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
+import android.widget.Toast
 import android.content.Intent
 import android.view.View
 import android.widget.RemoteViews
@@ -58,6 +59,7 @@ class DshWidgetProvider : AppWidgetProvider() {
         }
         // 点右上角刷新：先把缓存画一遍（立刻有反应），再强制拉新数据。
         if (intent.action == ACTION_REFRESH) {
+            Toast.makeText(ctx, "正在刷新小组件…", Toast.LENGTH_SHORT).show()
             val cached = WidgetStateStore.load(ctx)
             if (cached != null) pushAll(ctx, SessionWatcher.summary.value, cached)
             WidgetRefresher.refresh(ctx, force = true)
@@ -94,7 +96,7 @@ class DshWidgetProvider : AppWidgetProvider() {
         private const val MAX_CHIPS = 3
 
         /** 卡片上最多显示几条会话。加了摘要行之后一行更占地方，3 条是 3×2 的舒适上限。 */
-        private const val MAX_SESSIONS = 5
+        private const val MAX_SESSIONS = 4
 
         /** 点右上角刷新：强制拉一次快照，跳过节流。 */
         private const val ACTION_REFRESH = "com.dshgo.app.widget.REFRESH"

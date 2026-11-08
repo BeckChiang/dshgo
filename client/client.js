@@ -6028,7 +6028,7 @@ window.__ModuleLoader__.load({
      */
     const APP_APK_URL = 'https://github.com/BeckChiang/dshgo/releases/latest/download/fnh-go.apk';
     const APP_RELEASES_URL = 'https://github.com/BeckChiang/dshgo/releases/latest';
-    const APP_VERSION = '4.5.0-beck.7';
+    const APP_VERSION = '4.5.0-beck.8';
 
     /**
      * 够宽才显示二维码。

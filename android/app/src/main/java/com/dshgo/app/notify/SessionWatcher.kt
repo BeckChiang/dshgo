@@ -87,7 +87,7 @@ object SessionWatcher {
     private var pulse: Job? = null
 
     /** 小组件快照心跳间隔：上下文占比/余额变化不产生 summary 事件，靠它兜。 */
-    private const val WIDGET_PULSE_MS = 15_000L
+    private const val WIDGET_PULSE_MS = 8_000L
     private var appContext: Context? = null
 
     /** id → 标题。事件里不带标题，靠启动快照 + `api-session/added` 维持。 */
