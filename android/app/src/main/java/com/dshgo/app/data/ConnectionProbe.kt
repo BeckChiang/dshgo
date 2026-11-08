@@ -83,7 +83,17 @@ object ConnectionProbe {
         val started = System.currentTimeMillis()
 
         val info = runCatching { getJson("$base/__dshgo__/info") }
-            .getOrElse { return@withContext Status(online = false, ms = System.currentTimeMillis() - started, error = friendly(it)) }
+            .getOrElse {
+                // 开了访问密码时，非导航请求一律 401 —— 那是「这台电脑在线，只是要密码」，
+                // 不是「连不上」。以前这里直接判 offline 并把 HTTP 401 标红，把人劝退了。
+                val locked = (it.message ?: "").contains("HTTP 401")
+                return@withContext Status(
+                    online = locked,
+                    ms = System.currentTimeMillis() - started,
+                    needsPassword = locked,
+                    error = if (locked) "" else friendly(it),
+                )
+            }
 
         // 确认对面确实是 dshgo 的转发层，而不是同网段某个碰巧开了端口的东西
         if (info.optString("name") != "dshgo") {
@@ -130,6 +140,8 @@ object ConnectionProbe {
             "unable to resolve host" in m ->
                 "地址解析不了"
             "地址格式不对" in m -> "地址格式不对"
+            "http 401" in m -> "在线，需要访问密码"
+            "http 404" in m -> "这个地址上没有 dshgo"
             else -> t.message?.take(60) ?: "探测失败"
         }
     }

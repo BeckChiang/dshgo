@@ -264,7 +264,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
             setPrompt("对准电脑上的二维码")
             setBeepEnabled(false)
-            setOrientationLocked(false)
+            // 锁定为进入扫码页时的方向：解锁会让 Samsung 折叠屏在展开/合上时把预览转错 90°，
+            // 用户看到的是「相机方向和手机方向不符」。锁住后预览与屏幕始终一致。
+            setOrientationLocked(true)
         }
         runCatching { scanLauncher.launch(options) }
             .onFailure { ui = ui.copy(setupError = "打不开相机 —— 检查有没有给相机权限，或直接手输地址。") }

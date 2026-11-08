@@ -53,6 +53,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -176,7 +177,7 @@ fun SetupScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "电脑上打开 DSH 的「设置 → 局域网访问」，把那里的地址填进来 —— 或者直接扫那一页的二维码。",
+                        "在电脑上打开 DSH 的「设置 → 局域网访问」，把地址填进来，或扫那一页的二维码。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -225,9 +226,11 @@ fun SetupScreen(
 
                     // 扫码填地址：比手敲 IP 快，也比「先在电脑上复制再粘贴」少一步 ——
                     // 电脑上「设置 → 局域网访问」那一页就摆着二维码。
-                    OutlinedButton(
+                    FilledTonalButton(
                         onClick = onScan,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
                         shape = RoundedCornerShape(14.dp),
                     ) {
                         Text("扫描二维码", style = MaterialTheme.typography.labelLarge)
@@ -310,7 +313,7 @@ private fun BrandMark(size: Int = 62) {
             .clip(RoundedCornerShape((size * 0.28f).dp))
             .background(
                 Brush.linearGradient(
-                    listOf(Color8(0x6EE7F9), Color8(0x5B78FF), Color8(0x3E5BF0)),
+                    listOf(Color8(0x9B6BFF), Color8(0x6C5CE7), Color8(0x4338CA)),
                 ),
             ),
         contentAlignment = Alignment.Center,

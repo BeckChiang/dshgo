@@ -44,9 +44,9 @@ window.__ModuleLoader__.load({
      * latest，文件名是照字面取的 —— 名字里带版本的话，发下一版当天就 404，
      * 而且不会有人察觉。详见收录指南里那条警告。
      */
-    const APP_APK_URL = 'https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk';
-    const APP_RELEASES_URL = 'https://github.com/xiazhi88/dshgo/releases/latest';
-    const APP_VERSION = '4.4.3';
+    const APP_APK_URL = 'https://github.com/BeckChiang/dshgo/releases/latest/download/fnh-go.apk';
+    const APP_RELEASES_URL = 'https://github.com/BeckChiang/dshgo/releases/latest';
+    const APP_VERSION = '4.5.0-beck.3';
 
     /**
      * 够宽才显示二维码。
@@ -105,6 +105,9 @@ window.__ModuleLoader__.load({
       },
       head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
       title: { fontSize: 14, fontWeight: 600, color: C.primary },
+      subTitle: { fontSize: 12, fontWeight: 600, color: C.secondary, marginTop: 10 },
+      statRow: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginTop: 6 },
+      statValue: { fontSize: 13, color: C.primary, fontVariantNumeric: 'tabular-nums' },
       muted: { fontSize: 12, color: C.secondary, lineHeight: 1.6, marginTop: 4 },
       row: {
         display: 'flex',
@@ -562,78 +565,80 @@ window.__ModuleLoader__.load({
       const tsSet = {};
       tailscale.forEach((u) => { tsSet[u] = true; });
       const lan = all.filter((u) => !tsSet[u]);
+      const up = Boolean(info) && !error && info.listening !== false;
+
+      const stat = (label, value) => h('div', { style: styles.statRow },
+        h('span', { style: styles.muted }, label),
+        h('span', { style: styles.statValue }, value),
+      );
 
       return h('div', { style: styles.root },
 
-        h(AccessPassword),
-
+        // 1) 运行状态放最上面：打开这一页第一眼要知道「通不通」，
+        //    而不是先读三段说明再往下找那行小字。
         h('div', { style: styles.card },
-          h('div', { style: styles.title }, L('局域网访问', 'LAN access')),
-          h('div', { style: styles.muted },
-            L('手机连上下面任意一个地址，就能访问这台电脑上的 DSH。',
-              'Open any address below on your phone to reach DSH on this machine.')),
-        ),
+          h('div', { style: styles.head },
+            h('div', { style: styles.title }, L('运行状态', 'Status')),
+            h('span', {
+              style: {
+                ...styles.badge,
+                color: up ? C.ok : (error ? C.err : C.tertiary),
+                borderColor: up ? C.ok : (error ? C.err : C.tertiary),
+              },
+            }, up
+              ? L('正在监听', 'Listening')
+              : (error ? L('未运行', 'Not running') : L('读取中', 'Loading'))),
+          ),
 
-        // 局域网地址
-        h('div', { style: styles.card },
-          h('div', { style: styles.title }, L('地址', 'Addresses')),
-          SHOW_QR
-            ? h('div', { style: styles.muted },
-                L('手机相机扫一下就能打开，不用手敲 IP。', 'Scan with your phone camera — no need to type the IP.'))
-            : null,
+          stat(L('转发端口', 'Forward port'), (info && info.port) ? (':' + info.port) : '—'),
+          stat(L('上游端口', 'Upstream port'), (info && info.upstreamPort) ? (':' + String(info.upstreamPort)) : '—'),
+          stat(L('版本', 'Version'), 'v' + APP_VERSION),
 
           error
-            ? h('div', { style: { ...styles.muted, color: C.err } },
+            ? h('div', { style: { ...styles.muted, color: C.err, marginTop: 8 } },
                 L('读取失败：', 'Failed to load: ') + error)
             : null,
 
-          !error && !info
-            ? h('div', { style: styles.muted }, L('读取中…', 'Loading…'))
+          !error && info && all.length === 0
+            ? h('div', { style: { ...styles.muted, color: C.err, marginTop: 8 } },
+                info.listening === false
+                  ? L('转发端口没起来 —— 服务端半在跑，但没能监听任何端口。', 'The forward port is not up — the host half runs but could not bind any port.')
+                  : L('没有找到非回环网卡 —— 检查电脑的网络连接。', 'No non-loopback interface found — check the network connection.'))
             : null,
-
-          !error && info && all.length === 0 && info.listening === false
-            ? h('div', { style: { ...styles.muted, color: C.err } },
-                L('转发端口没起来 —— 服务端半在跑，但没能监听任何端口（启动日志里会有 dshgo: 监听失败 那一行）。',
-                  'The forward port is not up — the host half runs but could not bind any port (look for the dshgo: line in the boot log).'))
-            : null,
-
-          !error && info && all.length === 0 && info.listening !== false
-            ? h('div', { style: styles.muted },
-                L('没有找到非回环网卡 —— 检查电脑的网络连接。',
-                  'No non-loopback interface found — check the network connection.'))
-            : null,
-
-          lan.map((url) => h(AddressRow, { key: url, url, qr, copied, onCopy })),
         ),
 
-        // 手机 App 下载
+        // 2) 访问密码
+        h(AccessPassword),
+
+        // 3) 两个入口：局域网 + Tailscale，各自带二维码
+        h('div', { style: styles.card },
+          h('div', { style: styles.title }, L('连接地址', 'Addresses')),
+          h('div', { style: styles.muted },
+            L('手机连上下面任意一个地址，就能访问这台电脑上的 DSH。',
+              'Open either address on your phone to reach DSH on this machine.')),
+
+          h('div', { style: styles.subTitle }, L('局域网', 'LAN')),
+          lan.length > 0
+            ? lan.map((url) => h(AddressRow, { key: url, url, qr, copied, onCopy }))
+            : h('div', { style: styles.muted },
+                L('没有可用的局域网地址。', 'No LAN address available.')),
+
+          h('div', { style: { ...styles.subTitle, marginTop: 14 } }, 'Tailscale'),
+          tailscale.length > 0
+            ? tailscale.map((url) => h(AddressRow, { key: url, url, qr, copied, onCopy }))
+            : h('div', { style: styles.muted },
+                L('没检测到。装好 Tailscale 并登录后，这里会出现一个 100.x 地址。',
+                  'Not detected. After installing Tailscale and signing in, a 100.x address shows up here.')),
+        ),
+
+        // 4) 手机 App（下载指向本项目仓库）
         error ? null : h(AppCard, { lan, qr, copied, onCopy }),
 
-        // 公网访问（有 Tailscale 就报喜，没有就给安装步骤）
-        error ? null : h(RemoteCard, { tailscale, copied, onCopy, qr }),
-
-        // 状态
-        h('div', { style: styles.card },
-          h('div', { style: styles.title }, L('状态', 'Status')),
-          h('div', { style: { ...styles.muted, display: 'flex', alignItems: 'center' } },
-            h('span', {
-              style: { ...styles.dot, background: (info && !error) ? C.ok : C.err },
-            }),
-            (info && !error)
-              ? (info.listening === false
-                  ? L('转发端口未监听', 'Forward port not listening')
-                  : L('正在监听 :', 'Listening on :') + String(info.port))
-              : (error ? L('服务端半未运行', 'Host half not running') : L('读取中…', 'Loading…')),
-          ),
-          h('div', { style: styles.muted },
-            L('本插件做转发与访问闸门：把只监听 127.0.0.1 的 dsh web 暴露到局域网，可选访问密码，并内联移动端适配。',
-              'This plugin forwards and gates: it exposes the loopback-only dsh web to your LAN, optionally requires an access password, and inlines the mobile adaptation.')),
-        ),
-
-        // star 引导放最后：它是请求，不是功能，不该挡在状态信息前面
-        h(StarCard),
+        // 5) 没有 Tailscale 时才给安装引导，已经有了就不占地方
+        error || tailscale.length > 0 ? null : h(RemoteCard, { tailscale, copied, onCopy, qr }),
       );
     }
+
 
     /**
      * 客户端插件入口。
