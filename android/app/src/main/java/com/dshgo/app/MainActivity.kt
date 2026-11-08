@@ -70,6 +70,7 @@ import androidx.compose.runtime.Composable
 import com.dshgo.app.ui.NoticePanel
 import com.dshgo.app.notify.SessionWatcher
 import com.dshgo.app.notify.NotificationCenter
+import com.dshgo.app.notify.WidgetRefresher
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -286,6 +287,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onResume()
         // 回到前台：页面自己会处理审批，把挂起的撤掉，别让两条链路抢答
         SessionWatcher.onForegroundChanged(true)
+        // 顺手刷一次小组件快照：用户刚在 App 里干完活（换了地址、解锁了、开过会话），
+        // 桌面上的卡片应该跟上。有网才拉，失败静默留在缓存。
+        WidgetRefresher.refresh(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1412,7 +1416,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private fun pinWidget() {
         val mgr = android.appwidget.AppWidgetManager.getInstance(this)
         if (!mgr.isRequestPinAppWidgetSupported) {
-            toast("这台设备不支持自动添加 —— 长按桌面 → 小组件 → 找到「DSH Go」")
+            toast("这台设备不支持自动添加 —— 长按桌面 → 小组件 → 找到「Fnh Go」")
             return
         }
         val ok = mgr.requestPinAppWidget(
@@ -1420,7 +1424,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             null,
             null,
         )
-        if (!ok) toast("请长按桌面 → 小组件 → 找到「DSH Go」")
+        if (!ok) toast("请长按桌面 → 小组件 → 找到「Fnh Go」")
     }
 
     /**

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">DSH Go</string>
+    <string name="app_name">Fnh Go</string>
 
     <!-- 长按图标弹出的快捷方式 -->
     <string name="shortcut_new">新会话</string>
@@ -10,8 +10,17 @@
     <string name="shortcut_settings">设置</string>
     <string name="shortcut_settings_long">地址、缩放、通知</string>
     <!-- 主屏小组件 -->
-    <string name="widget_description">一眼看 DSH 状态，一键开新会话</string>
+    <string name="widget_description">各工作区的会话、上下文与余额，一眼看完</string>
     <string name="widget_idle">DSH 空闲</string>
     <string name="widget_hint">会话跑完会通知你</string>
-    <string name="widget_label">DSH Go 状态</string>
+    <string name="widget_label">Fnh Go 状态</string>
+    <!-- 会话版小组件 -->
+    <string name="widget_balance">余额</string>
+    <string name="widget_untitled_session">未命名会话</string>
+    <!-- 降级文案：宁可说「没连上」，也不显示 0 或假数据 -->
+    <string name="widget_fallback_empty">这个工作区还没有会话</string>
+    <string name="widget_fallback_offline">未连接 · 点开 App</string>
+    <string name="widget_fallback_locked">已锁定 · 点开 App 解锁</string>
+    <string name="widget_fallback_approval">%1$d 个操作等你批准 · 点开 App</string>
+    <string name="widget_fallback_running">%1$d 个会话在跑 · 点开 App</string>
 </resources>

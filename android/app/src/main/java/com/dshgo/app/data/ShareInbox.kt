@@ -17,7 +17,7 @@ import java.io.File
  * 所以先落到应用私有目录，等用户在 DSH 里点「附件」时**直接把它交出去**
  * —— 见 [consumePendingImage]，由 `onShowFileChooser` 调用。
  *
- * 这样用户的操作是：相册里分享 → 回到 DSH Go → 点附件 → 图就在那儿了。
+ * 这样用户的操作是：相册里分享 → 回到 Fnh Go → 点附件 → 图就在那儿了。
  * 比让他"先保存到文件、再在 DSH 里翻文件"少好几步。
  */
 object ShareInbox {

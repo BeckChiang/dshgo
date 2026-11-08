@@ -18,4 +18,12 @@
     <color name="wg_dot_running">#FF22C55E</color>
     <color name="wg_dot_approval">#FFF59E0B</color>
     <color name="wg_dot_idle">#FF6B7488</color>
+
+    <!-- 会话列表：深色下胶囊用比卡片略亮的灰，分割线压到几乎看不见 -->
+    <color name="wg_pill_bg">#FF1E2531</color>
+    <color name="wg_pill_text">#FFE9EDF6</color>
+    <color name="wg_divider">#FF232A36</color>
+    <color name="wg_balance_label">#FF7C8698</color>
+    <color name="wg_chip_text">#FFA8B2C4</color>
+    <color name="wg_pct">#FF95A0B4</color>
 </resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  工作区切换条里的一枚胶囊。
+  选中态在 provider 里用 setBackgroundResource 换成 widget_pill（浅灰底），
+  未选中态用 widget_chip_plain（透明底），文字颜色同步换，避免「一排按钮分不清当前是哪个」。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_chip_text"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginEnd="5dp"
+    android:ellipsize="end"
+    android:maxWidth="104dp"
+    android:paddingStart="9dp"
+    android:paddingTop="3dp"
+    android:paddingEnd="9dp"
+    android:paddingBottom="3dp"
+    android:singleLine="true"
+    android:textColor="@color/wg_chip_text"
+    android:textSize="12sp" />

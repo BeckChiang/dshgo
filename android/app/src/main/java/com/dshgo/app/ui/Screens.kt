@@ -145,7 +145,7 @@ fun SetupScreen(
             BrandMark()
             Spacer(Modifier.height(16.dp))
             Text(
-                "DSH Go",
+                "Fnh Go",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
@@ -1004,7 +1004,7 @@ fun SettingsSheet(
             }
 
             Text(
-                "DSH Go · 直连你自己的电脑 · 界面为 DSH 原生",
+                "Fnh Go · 直连你自己的电脑 · 界面为 DSH 原生",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -1822,7 +1822,7 @@ fun ConnectionsScreen(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "DSH Go",
+                        "Fnh Go",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )

@@ -1,0 +1,39 @@
+Fnh Go — NOTICE
+================
+
+本仓库是 xiazhi88/dshgo 的分支（fork），按上游 MIT 许可分发。
+
+上游项目
+--------
+  dshgo
+  https://github.com/xiazhi88/dshgo
+  Copyright (c) xiazhi88
+  License: MIT（见 LICENSE）
+
+本分支的修改
+------------
+  Copyright (c) 2026 BeckChiang
+  License: MIT
+
+  主要改动：新增宿主端点 /__dshgo__/widget/state（工作区、会话、摘要、
+  上下文占比、定时任务、账户余额，逐源降级）；Android 端新增会话/定时
+  任务小组件、折叠屏适配、包名更改为 com.beck.dshgo、自签发布与更新检查；
+  代理层增加 launch token 的 401 自愈。
+
+第三方组件
+----------
+  dsh-web-mobile
+  https://github.com/mexiaosqwq/dsh-web-mobile
+  Copyright (c) mexiaosqwq
+  License: MIT
+  说明：移动端布局已内联到 client/vendor/ 与 lib/vendor/，
+        原始许可文本保留于 client/vendor/LICENSE.dsh-web-mobile
+        与 lib/vendor/LICENSE.dsh-web-mobile。
+
+  AndroidX / Kotlin / OkHttp / ZXing / Coil 等依赖
+  各自遵循其原始许可（见 android/app/build.gradle.kts 与 Gradle 依赖树）。
+
+商标
+----
+  DSH、DeepSeek Harness 归其各自权利人所有。本项目与上游及 DeepSeek
+  没有隶属或背书关系，名称仅用于说明兼容对象。

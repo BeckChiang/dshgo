@@ -1,19 +1,44 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// 签名材料放在仓库根的 keystore.properties（已 gitignore）。
+// 注意：Gradle 的 rootProject 是 android/ 目录，仓库根是它的父目录。
+// 文件不在时（例如 CI 没注入 secrets）退回 debug 签名，保证本地随时能装。
+val repoRoot = rootProject.projectDir.parentFile
+val keystoreProps = Properties().apply {
+    val f = repoRoot.resolve("keystore.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+val hasReleaseSigning = keystoreProps.isNotEmpty()
+
 android {
     namespace = "com.dshgo.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.dshgo.app"
+        // 独立 applicationId：可与官方包并存，升级链只由本项目自己的签名决定。
+        applicationId = "com.beck.dshgo"
         minSdk = 26
         targetSdk = 35
-        versionCode = 43
-        versionName = "4.4.3"
+        versionCode = 46
+        versionName = "4.5.0-beck.3"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = repoRoot.resolve(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildFeatures {
@@ -26,16 +51,20 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // R8 + 资源压缩：裁掉 Compose 运行时里没走到的分支，体积差一个数量级。
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // 上游原本开 R8 + 资源压缩（体积差一个数量级），但那一步在本机要跑十几分钟且
+            // 容易在中途被打断。侧载自用阶段关掉，等正式发版再打开。
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // 个人自用：release 用 debug 密钥签名，装得上即可。
-            // 要分发就换成自己的 keystore（见 README「签名」一节）。
-            signingConfig = signingConfigs.getByName("debug")
+            // 有 keystore.properties 就用自签密钥，否则退回 debug 密钥（仅本地试装）。
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

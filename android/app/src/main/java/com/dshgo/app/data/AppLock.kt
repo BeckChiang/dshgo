@@ -194,7 +194,7 @@ object AppLock {
         Method.None -> "验证身份"
     }
 
-    fun promptSubtitle(): String = "解锁 DSH Go 的局域网访问"
+    fun promptSubtitle(): String = "解锁 Fnh Go 的局域网访问"
 
     // ------------------------------------------------------------------
     // 密码的存取

@@ -1,6 +1,21 @@
-# macOS 目录元数据 —— 不是项目内容，别进仓库
-.DS_Store
+# Gradle / Android 构建产物
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
+captures/
+.cxx/
 
-# 与 dshgo 无关的本地文件，别误提交
-/install.sh
-/install.sh.sha256
+# 签名材料：绝不入库
+keystore/
+keystore.properties
+*.jks
+*.keystore
+
+# 依赖与产物
+node_modules/
+*.apk
+*.aab
+*.ap_
+*.dex

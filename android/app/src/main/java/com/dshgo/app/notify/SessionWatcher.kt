@@ -230,6 +230,10 @@ object SessionWatcher {
                     _mode.value = Mode.Poll
                     pollTick(client)
                     pollTicks++
+                    // 轮询模式下顺手刷小组件快照（≈每 30s 一次）。
+                    // summary 没变化时不会走 refreshSummary，但上下文占比/余额会变，
+                    // 靠这个低频节拍兜住；WidgetRefresher 自己还有单飞+3s 节流。
+                    if (pollTicks % 10 == 0) appContext?.let { WidgetRefresher.refresh(it) }
                     // 每 POLL_MS × WS_RETRY_EVERY ≈ 1 分钟再试一次 WS：
                     // 上游升级之后能自动切回实时流。
                     if (pollTicks % WS_RETRY_EVERY != 0) {
@@ -336,6 +340,10 @@ object SessionWatcher {
         NotificationCenter.updateForeground(ctx, currentHost, s)
         // 桌面上放着小组件的话，一起刷新 —— 那是最常被瞟一眼的地方
         DshWidgetProvider.update(ctx, s)
+        // 会话版的卡片还要会话列表/上下文/余额，这些只有 widget 端点有；
+        // 状态流变了就顺手拉一次（WidgetRefresher 内部有单飞+3s 节流，不会打爆）。
+        // 不在这里开长连接：网络复用这条 WS/轮询已有的节奏。
+        WidgetRefresher.refresh(ctx)
     }
 
     /** 退出前台时把已有审批挂进通知，进来时撤掉。 */

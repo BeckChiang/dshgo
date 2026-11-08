@@ -48,7 +48,7 @@ class UpdateInstalledReceiver : BroadcastReceiver() {
         val n = NotificationCompat.Builder(context, NotificationCenter.CHANNEL_WATCH)
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle("已更新到 $version")
-            .setContentText("点一下回到 DSH Go")
+            .setContentText("点一下回到 Fnh Go")
             .setContentIntent(pi)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

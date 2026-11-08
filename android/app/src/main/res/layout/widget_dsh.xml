@@ -1,118 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  主屏小组件。
+  会话小组件（3×2）。
 
-  ## 视觉
-  蓝 + 白 + 鲸鱼。鲸鱼取的是 DSH 前端自带的 favicon 路径（没有自己重画），
-  填品牌蓝 #4D6BFE；卡片白底、主按钮品牌蓝。状态点用语义色
-  （绿=在跑 / 琥珀=等你批准 / 灰=空闲），放在右上角不抢鲸鱼的位置。
-
-  ## RemoteViews 的三条硬限制（都踩过）
-  1. **只支持一小组视图**：`android.view.View` / `Space` **不在列表里** ——
-     用 View 做状态点会让整个小组件显示 "Can't load widget"（实测截图才发现）。
-     所以状态点用 ImageView，弹性占位用空 TextView。
-  2. **不能 tint**：要按状态换颜色只能备好几份 drawable 再换资源 id。
-  3. **尺寸由启动器决定**：同一份布局要能适应 2~4 格高。所以是
-     「上弹性空隙 + 内容块 + 下弹性空隙」，内容永远居中。
-
-  颜色在 values/ 与 values-night/ 各一份同名资源，布局只有这一份。
+  RemoteViews 只支持有限的一组视图，且**不能**用 <View>/<Space> 占位，
+  所以所有「空隙」都用带 weight 的空 TextView，分割线用 1dp 高的 TextView。
+  颜色全部走 @color 资源：res/values-night 下有同名定义，系统深色模式自动切换，
+  代码里不需要判断 uiMode。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@drawable/widget_card"
     android:orientation="vertical"
-    android:padding="15dp"
-    android:background="@drawable/widget_card">
+    android:paddingStart="14dp"
+    android:paddingTop="12dp"
+    android:paddingEnd="14dp"
+    android:paddingBottom="12dp">
 
-    <!-- 上弹性空隙（空 TextView 当占位符 —— Space 不在允许列表里） -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
-
-    <!-- 鲸鱼 + 标题 + 状态点 -->
+    <!-- 头部：鲸鱼 + 工作区切换条（每个工作区一个胶囊，点谁切谁） / 右侧余额 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
         <ImageView
             android:id="@+id/widget_whale"
             android:layout_width="17dp"
             android:layout_height="17dp"
-            android:src="@drawable/ic_whale"
-            android:contentDescription="@null" />
+            android:layout_marginEnd="7dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_whale" />
 
-        <TextView
-            android:id="@+id/widget_title"
-            android:layout_width="0dp"
+        <!-- 工作区切换条：由一个 chip 换成一排 chip，工作区多了也点得到 -->
+        <LinearLayout
+            android:id="@+id/widget_chips"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:text="@string/widget_idle"
-            android:textColor="@color/wg_title"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:letterSpacing="-0.01"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal" />
 
-        <ImageView
-            android:id="@+id/widget_dot"
-            android:layout_width="9dp"
-            android:layout_height="9dp"
-            android:layout_marginStart="8dp"
-            android:src="@drawable/widget_dot_idle"
-            android:contentDescription="@null" />
+        <!-- 兜底：一个工作区都不认识时仍显示一个不可点的标题 -->
+        <TextView
+            android:id="@+id/widget_workspace"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_pill"
+            android:ellipsize="end"
+            android:maxWidth="132dp"
+            android:paddingStart="9dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="9dp"
+            android:paddingBottom="3dp"
+            android:singleLine="true"
+            android:textColor="@color/wg_pill_text"
+            android:textSize="12.5sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <!-- 弹性空隙：RemoteViews 不支持 Space，用空 TextView 顶开余额 -->
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:id="@+id/widget_balance_box"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_balance_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/widget_balance"
+                android:textColor="@color/wg_balance_label"
+                android:textSize="9sp" />
+
+            <TextView
+                android:id="@+id/widget_balance_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:textColor="@color/wg_title"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/widget_detail"
+    <!-- 会话行容器：由 provider 用 addView 逐条塞进 widget_dsh_row -->
+    <LinearLayout
+        android:id="@+id/widget_rows"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:layout_marginStart="25dp"
-        android:text="@string/widget_hint"
+        android:layout_marginTop="7dp"
+        android:orientation="vertical" />
+
+    <!-- 没有可显示的数据时的降级文案（不显示 0 / 假数据） -->
+    <TextView
+        android:id="@+id/widget_fallback"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:lineSpacingExtra="2dp"
+        android:maxLines="2"
         android:textColor="@color/wg_detail"
         android:textSize="11.5sp"
-        android:lineSpacingExtra="2dp"
-        android:maxLines="3"
-        android:ellipsize="end" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="12dp">
-
-        <TextView
-            android:id="@+id/widget_new"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="@string/shortcut_new"
-            android:textColor="@color/wg_on_primary"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:background="@drawable/widget_btn_primary" />
-
-        <TextView
-            android:id="@+id/widget_recent"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:gravity="center"
-            android:text="@string/shortcut_recent"
-            android:textColor="@color/wg_ghost_text"
-            android:textSize="13sp"
-            android:background="@drawable/widget_btn_ghost" />
-    </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:visibility="gone" />
 </LinearLayout>

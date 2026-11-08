@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 工作区标题胶囊：浅灰底 + 圆角。颜色走资源，深色模式自动换。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/wg_pill_bg" />
+    <corners android:radius="9dp" />
+</shape>

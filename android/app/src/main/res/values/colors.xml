@@ -30,4 +30,14 @@
     <color name="wg_dot_running">#FF22C55E</color>
     <color name="wg_dot_approval">#FFF59E0B</color>
     <color name="wg_dot_idle">#FF98A1B0</color>
+
+    <!-- 会话列表：工作区胶囊、行分割线、余额标签 -->
+    <color name="wg_pill_bg">#FFF2F4F8</color>
+    <color name="wg_pill_text">#FF10141C</color>
+    <color name="wg_divider">#FFEDF0F5</color>
+    <color name="wg_balance_label">#FF98A1B0</color>
+    <!-- 未选中的工作区胶囊文字；选中的用 wg_pill_text -->
+    <color name="wg_chip_text">#FF6B7484</color>
+    <!-- 上下文占比：比标题弱一档，但要能读 -->
+    <color name="wg_pct">#FF7C8595</color>
 </resources>
