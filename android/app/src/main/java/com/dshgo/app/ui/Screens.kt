@@ -979,7 +979,10 @@ fun SettingsSheet(
                     if (!updateChecking && updateLatest != null && !updateNewer) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "已是最新版本（$updateLatest）",
+                            // 显示本机真实版本号。以前用 $updateLatest，而它是从宿主
+                            // `/__dshgo__/info` 的 latestVersion 拿的 —— 宿主没重启就一直是
+                            // 旧的 4.4.3，和 BuildConfig 对不上。
+                            "已是最新版本（$currentVersion）",
                             style = MaterialTheme.typography.labelSmall,
                             color = DshColor.Running,
                         )

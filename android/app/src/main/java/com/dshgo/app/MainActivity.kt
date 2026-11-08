@@ -804,6 +804,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         autoPickAddress()
 
         startLoadTimeout()
+        ensureThemeCookie(entry)
         webView.loadUrl(entry, themeHeaders())
     }
 
@@ -821,12 +822,21 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         startLoadTimeout()
 
         Thread({
+            // 宿主开了访问密码、而这台设备还没解锁时，普通握手是拿不到凭据的，
+            // 页面只会一直转圈。所以先问一句要不要解锁，要就切到解锁页，
+            // 让用户输密码 / 过生物识别，而不是在 DSH 界面里等到超时。
+            val needUnlock = runCatching { kotlinx.coroutines.runBlocking { UnlockClient.required(entry) } }.getOrDefault(false)
+            if (needUnlock) {
+                handler.post { gateThenLoad(entry) }
+                return@Thread
+            }
             val result = Handshake.run(entry, false)
             handler.post {
                 if (result.ok) {
                     val cm = CookieManager.getInstance()
                     result.cookies.forEach { cm.setCookie(entry, it) }
                     cm.flush()
+                    ensureThemeCookie(entry)
                     webView.loadUrl(entry, themeHeaders())
                 } else {
                     // 握手失败就退回普通 reload，至少让页面自己把错误显示出来
@@ -914,11 +924,30 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private fun themeHeaders(): Map<String, String> =
         mapOf("X-Fnh-Theme" to if (isDarkNow()) "dark" else "light")
 
+    /**
+     * 主题同时写一份 cookie。
+     *
+     * 只发 header 不够：宿主 303 跳到 `/` 时 WebView 不会把自定义头带过去，
+     * 于是首屏深色、跳一下又变回浅色（用户实测就是「进入 dsh 后还是浅色」）。
+     * cookie 会跟着后续所有请求走，代理优先读 header、读不到再读 cookie。
+     */
+    private fun ensureThemeCookie(entry: String) {
+        if (entry.isEmpty()) return
+        try {
+            val cm = CookieManager.getInstance()
+            cm.setCookie(entry, "fnh_theme=${if (isDarkNow()) "dark" else "light"}; path=/")
+            cm.flush()
+        } catch (_: Throwable) {
+            // 写 cookie 失败不影响加载，header 那条路还在
+        }
+    }
+
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         // 系统切深色/浅色时 DSH 页面必须重新取一次，否则它还按旧主题渲染。
         val entry = prefs.entryUrl()
         if (entry.isEmpty() || !loaded) return
+        ensureThemeCookie(entry)
         webView.loadUrl(entry, themeHeaders())
     }
 
@@ -1407,6 +1436,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             // 新造的、或者地址变了：真真正正导航一次
             ui = ui.copy(screen = Screen.Dsh, dshReady = false, dshError = null)
             startLoadTimeout()
+            ensureThemeCookie(entry)
             webView.loadUrl(entry, themeHeaders())
             return
         }
@@ -1586,11 +1616,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         clearLoadTimeout()
         val runnable = Runnable {
             if (ui.screen == Screen.Dsh && !ui.dshReady && ui.dshError == null) {
-                ui = ui.copy(dshError = "界面加载超时。检查电脑上的 dsh web 是否还在运行。")
+                ui = ui.copy(
+                    dshError = "界面还没加载出来：可能是这台设备还没解锁，或者电脑上的 dsh web 没在运行。" +
+                        "点「重新加载」会先走一次解锁（密码 / 生物识别）。",
+                )
             }
         }
         loadTimeout = runnable
-        handler.postDelayed(runnable, 20_000)
+        handler.postDelayed(runnable, 12_000)
     }
 
     private fun clearLoadTimeout() {
