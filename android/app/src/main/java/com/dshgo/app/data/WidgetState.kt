@@ -19,6 +19,8 @@ data class WidgetState(
     /** 各数据源的可用性（"ok" / 其它）。拿不到位的数据源宁可隐藏也不显示 0。 */
     val sources: Map<String, String>,
     val updatedAt: String?,
+    /** 高峰/低峰小字，例如「低峰 · 00:30–08:30 · 5 折」；没有就隐藏。 */
+    val pricingLabel: String? = null,
 ) {
 
     data class Workspace(
@@ -120,6 +122,7 @@ data class WidgetState(
                 balance = balance,
                 sources = sources,
                 updatedAt = root.optString("updatedAt").ifBlank { null },
+                pricingLabel = root.optString("pricingLabel").ifBlank { null },
             )
         }
 
@@ -142,7 +145,7 @@ data class WidgetState(
                         pendingApproval = s.optBoolean("approval", false) ||
                             s.optBoolean("pendingApproval", false) ||
                             s.optInt("approvals", 0) > 0,
-                        summary = s.optString("summary").takeIf { it.isNotBlank() },
+                        summary = if (s.isNull("summary")) null else s.optString("summary").takeIf { it.isNotBlank() },
                     ),
                 )
             }

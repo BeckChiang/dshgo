@@ -88,7 +88,19 @@
                 android:textColor="@color/wg_title"
                 android:textSize="14sp"
                 android:textStyle="bold" />
-        </LinearLayout>
+            <!-- 高峰/低峰小字：由 provider 填，副标题为空时隐藏 -->
+    <TextView
+        android:id="@+id/widget_footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textColor="@color/wg_detail"
+        android:textSize="9.5sp"
+        android:visibility="gone" />
+
+</LinearLayout>
     </LinearLayout>
 
     <!-- 会话行容器：由 provider 用 addView 逐条塞进 widget_dsh_row -->

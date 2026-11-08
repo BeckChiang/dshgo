@@ -87,7 +87,7 @@ class DshWidgetProvider : AppWidgetProvider() {
         private const val MAX_CHIPS = 3
 
         /** 卡片上最多显示几条会话。加了摘要行之后一行更占地方，3 条是 3×2 的舒适上限。 */
-        private const val MAX_SESSIONS = 3
+        private const val MAX_SESSIONS = 5
 
         /**
          * 把状态推给桌面上所有实例。
@@ -235,6 +235,15 @@ class DshWidgetProvider : AppWidgetProvider() {
                     )
                     addView(R.id.widget_rows, row)
                 }
+            }
+
+            // 底部小字：DeepSeek 现在高峰还是低峰。拿不到就整行隐藏——不写「未知」占位。
+            val pricing = state?.pricingLabel?.trim().orEmpty()
+            if (pricing.isEmpty()) {
+                setViewVisibility(R.id.widget_footer, View.GONE)
+            } else {
+                setViewVisibility(R.id.widget_footer, View.VISIBLE)
+                setTextViewText(R.id.widget_footer, pricing)
             }
         }
 
