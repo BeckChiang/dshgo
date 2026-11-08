@@ -269,16 +269,22 @@ object SessionWatcher {
                     }
 
                     override fun onApproval(ask: DshApi.ApprovalAsk): Boolean {
-                        // 前台不接管：页面在处理，抢答会打架
-                        if (appForeground) return false
+                        // 无论前后台都要记账：小组件和常驻通知靠 _approvals 显示「N 个待审批」。
+                        // 之前这里在前台直接 return false，结果前台出现的审批连计数都没有，
+                        // 小组件自然一直是「N 个在跑」。
                         synchronized(this@SessionWatcher) {
-                            if (_approvals.value.any { it.eventId == ask.eventId }) return true
+                            // 已经在列表里：如果我们在后台（已接管），这次是重复投递，回 true 免得页面也弹
+                            if (_approvals.value.any { it.eventId == ask.eventId }) return !appForeground
                             _approvals.value = _approvals.value + ask
                         }
                         _lastEventAt.value = System.currentTimeMillis()
-                        appContext?.let { NotificationCenter.postApproval(it, ask) }
+                        // 只有后台才接管（发通知 + 允许/拒绝按钮）；
+                        // 前台把决定权留给页面，抢答会和网页打架。
+                        if (!appForeground) {
+                            appContext?.let { NotificationCenter.postApproval(it, ask) }
+                        }
                         refreshSummary()
-                        return true
+                        return !appForeground
                     }
 
                     override fun onEmit(event: String, args: JSONArray) {

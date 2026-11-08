@@ -417,6 +417,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         )
     }
 
+    override fun onStart() {
+        super.onStart()
+        // 前后台切换会决定「审批由谁接管」：前台交给页面，后台由 App 发通知/更新小组件。
+        // 之前这个回调没有任何调用方，appForeground 永远是 true ——
+        // 于是审批既不进通知也不进小组件计数。
+        SessionWatcher.onForegroundChanged(true)
+    }
+
+    override fun onStop() {
+        SessionWatcher.onForegroundChanged(false)
+        super.onStop()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
