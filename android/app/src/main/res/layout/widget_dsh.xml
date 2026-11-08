@@ -65,6 +65,16 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
+        <!-- 手动刷新：点一下强制拉一次快照（15s 心跳之外的手动档） -->
+        <ImageView
+            android:id="@+id/widget_refresh"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="center_vertical"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="@string/widget_refresh_desc"
+            android:src="@drawable/ic_widget_refresh" />
+
         <LinearLayout
             android:id="@+id/widget_balance_box"
             android:layout_width="wrap_content"

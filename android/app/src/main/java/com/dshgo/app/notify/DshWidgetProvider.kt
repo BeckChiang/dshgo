@@ -56,6 +56,13 @@ class DshWidgetProvider : AppWidgetProvider() {
             WidgetRefresher.refresh(ctx, force = true)
             return
         }
+        // 点右上角刷新：先把缓存画一遍（立刻有反应），再强制拉新数据。
+        if (intent.action == ACTION_REFRESH) {
+            val cached = WidgetStateStore.load(ctx)
+            if (cached != null) pushAll(ctx, SessionWatcher.summary.value, cached)
+            WidgetRefresher.refresh(ctx, force = true)
+            return
+        }
         // 点某个工作区胶囊：直接切到它，先本地重绘再拉一次快照。
         if (intent.action == ACTION_SELECT_WORKSPACE) {
             val id = intent.getStringExtra(EXTRA_WORKSPACE_ID)
@@ -88,6 +95,9 @@ class DshWidgetProvider : AppWidgetProvider() {
 
         /** 卡片上最多显示几条会话。加了摘要行之后一行更占地方，3 条是 3×2 的舒适上限。 */
         private const val MAX_SESSIONS = 5
+
+        /** 点右上角刷新：强制拉一次快照，跳过节流。 */
+        private const val ACTION_REFRESH = "com.dshgo.app.widget.REFRESH"
 
         /**
          * 把状态推给桌面上所有实例。
@@ -178,6 +188,8 @@ class DshWidgetProvider : AppWidgetProvider() {
             } else {
                 setViewVisibility(R.id.widget_balance_box, View.GONE)
             }
+
+            setOnClickPendingIntent(R.id.widget_refresh, refreshTap(ctx, 60))
 
             val sessions = workspace?.sessions.orEmpty().take(MAX_SESSIONS)
             removeAllViews(R.id.widget_rows)
@@ -323,6 +335,17 @@ class DshWidgetProvider : AppWidgetProvider() {
         }
 
         /** 点某一行 → 打开这条会话。id 走和通知同一条通道（MainActivity 的 consumeOpenSession）。 */
+        /** 刷新按钮 → 广播回 provider 自己，再走 WidgetRefresher（网络只在那一条路上）。 */
+        private fun refreshTap(ctx: Context, code: Int): PendingIntent {
+            val intent = Intent(ctx, DshWidgetProvider::class.java).setAction(ACTION_REFRESH)
+            return PendingIntent.getBroadcast(
+                ctx,
+                code,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
         private fun sessionTap(ctx: Context, sessionId: String, code: Int): PendingIntent {
             val i = Intent(ctx, MainActivity::class.java)
                 .putExtra(NotificationCenter.EXTRA_SESSION_ID, sessionId)

@@ -23,4 +23,5 @@
     <string name="widget_fallback_locked">已锁定 · 点开 App 解锁</string>
     <string name="widget_fallback_approval">%1$d 个操作等你批准 · 点开 App</string>
     <string name="widget_fallback_running">%1$d 个会话在跑 · 点开 App</string>
+    <string name="widget_refresh_desc">刷新小组件</string>
 </resources>

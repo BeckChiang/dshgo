@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件右上角的刷新按钮：两段弧 + 箭头，24dp 基准。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF6B7484"
+        android:pathData="M12,5V1L7,6l5,5V7c3.31,0 6,2.69 6,6c0,1.01 -0.25,1.96 -0.7,2.8l1.46,1.46C20.54,16.05 21,14.59 21,13C21,8.58 16.97,5 12,5z" />
+    <path
+        android:fillColor="#FF6B7484"
+        android:pathData="M12,19c-3.31,0 -6,-2.69 -6,-6c0,-1.01 0.25,-1.96 0.7,-2.8L5.24,8.74C4.46,9.95 4,11.41 4,13c0,4.42 4.03,8 8,8v4l5,-5l-5,-5V19z" />
+</vector>

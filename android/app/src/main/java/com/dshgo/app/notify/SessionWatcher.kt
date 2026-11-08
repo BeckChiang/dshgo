@@ -78,6 +78,16 @@ object SessionWatcher {
     private var api: DshApi? = null
     private var stream: DshApi.EventStream? = null
     private var loop: Job? = null
+
+    /**
+     * 小组件的低频脉冲：WS 模式下 summary 只在「开跑/跑完」时变化，
+     * 上下文占比和余额变的时候它不会动 —— 靠这条 15s 心跳把快照拉新。
+     * 刷新本身有单飞+3s 节流，这里不需要再判断。
+     */
+    private var pulse: Job? = null
+
+    /** 小组件快照心跳间隔：上下文占比/余额变化不产生 summary 事件，靠它兜。 */
+    private const val WIDGET_PULSE_MS = 15_000L
     private var appContext: Context? = null
 
     /** id → 标题。事件里不带标题，靠启动快照 + `api-session/added` 维持。 */
@@ -202,6 +212,13 @@ object SessionWatcher {
         val client = DshApi { baseUrl }
         api = client
 
+        pulse = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(WIDGET_PULSE_MS)
+                appContext?.let { WidgetRefresher.refresh(it) }
+            }
+        }
+
         loop = scope.launch(Dispatchers.IO) {
             // 先拿一次全量：标题对照表 + 「已经在跑」的基线
             runCatching { client.snapshot() }.onSuccess { snap ->
@@ -299,6 +316,8 @@ object SessionWatcher {
 
     @Synchronized
     fun stop() {
+        pulse?.cancel()
+        pulse = null
         loop?.cancel()
         loop = null
         currentUrl = null
