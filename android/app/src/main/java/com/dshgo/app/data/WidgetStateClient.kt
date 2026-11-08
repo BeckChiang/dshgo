@@ -66,6 +66,9 @@ object WidgetStateClient {
             if (!body.trimStart().startsWith("{")) return@withContext Result.Failed("响应不是 JSON")
             // 只做结构门禁，真正的解析在 WidgetStateStore.load 里；坏数据不落盘。
             if (!body.contains("\"workspaces\"")) return@withContext Result.Failed("响应缺少 workspaces")
+            // 宿主端点自己失败时会回 `{"error":{"code":"widget-state-failed",...}, "workspaces":[]}`
+            // —— 这种「空壳」不能覆盖缓存，否则一次服务端 bug 就把卡片清成「这个工作区还没有会话」。
+            if (body.contains("\"widget-state-failed\"")) return@withContext Result.Failed("端点报错")
             Result.Ok(body)
         } catch (t: Throwable) {
             Result.Failed(t.message ?: t.javaClass.simpleName)
