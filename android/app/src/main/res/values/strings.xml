@@ -24,4 +24,18 @@
     <string name="widget_fallback_approval">%1$d 个操作等你批准 · 点开 App</string>
     <string name="widget_fallback_running">%1$d 个会话在跑 · 点开 App</string>
     <string name="widget_refresh_desc">刷新小组件</string>
+
+    <!-- 定时任务小组件 -->
+    <string name="widget_schedule_label">Fnh Go 定时任务</string>
+    <string name="tunnel_page_title">Tailscale</string>
+    <string name="widget_schedule_desc">看接下来要跑的任务</string>
+    <string name="widget_schedule_title">定时任务</string>
+    <string name="widget_schedule_count">%1$d 个</string>
+    <string name="widget_row_status_running">运行中</string>
+    <string name="widget_row_status_idle">空闲</string>
+    <string name="widget_row_status_approval">等你批准 · 点开处理</string>
+    <string name="widget_workspace_title">选择工作区</string>
+    <string name="widget_back">返回</string>
+    <string name="widget_ws_meta_selected">%1$d 条会话 · 当前选择</string>
+    <string name="widget_ws_meta">%1$d 条会话</string>
 </resources>

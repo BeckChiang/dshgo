@@ -9,7 +9,7 @@
     <shortcut
         android:shortcutId="new_session"
         android:enabled="true"
-        android:icon="@drawable/ic_notify"
+        android:icon="@drawable/ic_notify_f"
         android:shortcutShortLabel="@string/shortcut_new"
         android:shortcutLongLabel="@string/shortcut_new_long">
         <intent
@@ -21,7 +21,7 @@
     <shortcut
         android:shortcutId="recent_session"
         android:enabled="true"
-        android:icon="@drawable/ic_notify"
+        android:icon="@drawable/ic_notify_f"
         android:shortcutShortLabel="@string/shortcut_recent"
         android:shortcutLongLabel="@string/shortcut_recent_long">
         <intent
@@ -33,7 +33,7 @@
     <shortcut
         android:shortcutId="open_settings"
         android:enabled="true"
-        android:icon="@drawable/ic_notify"
+        android:icon="@drawable/ic_notify_f"
         android:shortcutShortLabel="@string/shortcut_settings"
         android:shortcutLongLabel="@string/shortcut_settings_long">
         <intent

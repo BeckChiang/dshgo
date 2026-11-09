@@ -26,8 +26,8 @@ android {
         applicationId = "com.beck.dshgo"
         minSdk = 26
         targetSdk = 35
-        versionCode = 57
-        versionName = "4.5.0-beck.14"
+        versionCode = 62
+        versionName = "4.5.0-beck.19"
     }
 
     signingConfigs {
@@ -122,6 +122,14 @@ dependencies {
 
     // JVM 单元测试：PageInject 拼出来的 JS 要能被外部校验
     testImplementation("junit:junit:4.13.2")
+
+    // 内嵌 Tailscale（阶段 4）：gomobile bind 产出的 AAR。
+    // 仓库根放 libtailscale.aar（已 gitignore）；没有这个文件时跳过，
+    // 让「只做组件、不做隧道」的构建仍然可用。
+    val tsAar = repoRoot.resolve("libtailscale.aar")
+    if (tsAar.isFile) {
+        implementation(files(tsAar))
+    }
 
 
     // 注意：不要加 debugImplementation("androidx.compose.ui:ui-tooling")。

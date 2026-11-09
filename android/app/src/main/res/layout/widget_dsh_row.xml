@@ -1,28 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  一条会话：状态点 + 标题（单行省略）+ 右侧上下文占比，标题下方一行摘要。
-  行尾自带 1dp 分割线；最后一行由 provider 置 GONE，免得卡片底部多出一条悬空线。
-  注意：分割线必须是 TextView（RemoteViews 不支持 <View>）。
-  摘要行由 provider 按数据有无决定 GONE/VISIBLE —— 没有摘要时行高自动回落，不会留白。
+  滚动列表里的一条会话（普通行）。
+
+  三行结构：标题（14sp）→ 摘要（最多两行，11.5sp）→ 状态行（10sp）。
+  行高不再由 provider 写死，ListView 自己滚；所以这里可以放心把字放大、把内容加厚。
+
+  注意：分割线必须是 TextView（RemoteViews 不支持 <View>），底边留给列表，不加线。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_row_root"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="46dp"
     android:orientation="vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:paddingTop="7dp"
-        android:paddingBottom="7dp">
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
 
         <ImageView
             android:id="@+id/widget_row_dot"
             android:layout_width="9dp"
             android:layout_height="9dp"
-            android:layout_marginTop="5dp"
-            android:layout_marginEnd="8dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginEnd="9dp"
             android:contentDescription="@null"
             android:src="@drawable/widget_dot_idle" />
 
@@ -39,18 +42,28 @@
                 android:ellipsize="end"
                 android:singleLine="true"
                 android:textColor="@color/wg_title"
-                android:textSize="13sp" />
+                android:textSize="14sp" />
 
             <TextView
                 android:id="@+id/widget_row_summary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="1dp"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/wg_pct"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/widget_row_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:singleLine="true"
-                android:textColor="@color/wg_pct"
-                android:textSize="10.5sp"
-                android:visibility="gone" />
+                android:textColor="@color/wg_detail"
+                android:textSize="10sp" />
         </LinearLayout>
 
         <TextView
@@ -58,16 +71,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
-            android:layout_marginTop="1dp"
+            android:layout_marginTop="2dp"
             android:singleLine="true"
             android:textColor="@color/wg_pct"
-            android:textSize="10.5sp" />
+            android:textSize="11sp" />
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/widget_row_divider"
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginStart="17dp"
-        android:background="@color/wg_divider" />
 </LinearLayout>

@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
 import android.content.Intent
 import android.view.View
@@ -37,7 +38,9 @@ class DshWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(ctx: Context, manager: AppWidgetManager, ids: IntArray) {
         val summary = SessionWatcher.summary.value
         val state = WidgetStateStore.load(ctx)
-        ids.forEach { manager.updateAppWidget(it, buildViews(ctx, summary, state)) }
+        ids.forEach { manager.updateAppWidget(it, buildViews(ctx, summary, state, it)) }
+        // 列表数据在 RemoteViewsFactory 里，改完必须显式通知，否则滑动列表停在旧内容。
+        manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_list)
 
         // 小组件刚被放到桌面（或系统刷新）时，确保状态是活的：
         // 用户可能刚重装、刚重启，SessionWatcher 还没起来。随后顺手拉一次快照
@@ -78,7 +81,37 @@ class DshWidgetProvider : AppWidgetProvider() {
             }
             return
         }
+        // 翻页：会话页 ↔ 工作区页。点「+N」或「返回」都走这里。
+        if (intent.action == ACTION_SWITCH_PAGE) {
+            val id = intent.getIntExtra(EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+            val page = intent.getStringExtra(EXTRA_PAGE) ?: WidgetStateStore.PAGE_SESSIONS
+            if (id != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                WidgetStateStore.setPage(ctx, id, page)
+                WidgetStateStore.load(ctx)?.let { pushAll(ctx, SessionWatcher.summary.value, it) }
+            }
+            return
+        }
+        // 工作区页点了某一项：记住选择、翻回会话页、再拉一次快照。
+        if (intent.action == ACTION_PICK_WORKSPACE) {
+            val id = intent.getIntExtra(EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+            val workspaceId = intent.getStringExtra(EXTRA_WORKSPACE_ID)
+            if (!workspaceId.isNullOrBlank()) {
+                WidgetStateStore.setSelectedWorkspaceId(ctx, workspaceId)
+                if (id != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    WidgetStateStore.setPage(ctx, id, WidgetStateStore.PAGE_SESSIONS)
+                }
+                WidgetStateStore.load(ctx)?.let { pushAll(ctx, SessionWatcher.summary.value, it) }
+                WidgetRefresher.refresh(ctx, force = true)
+            }
+            return
+        }
         super.onReceive(ctx, intent)
+    }
+
+    override fun onDeleted(ctx: Context, appWidgetIds: IntArray) {
+        // 实例被删掉后清掉它的翻页状态，避免 id 复用后一放上桌面就停在工作区页。
+        appWidgetIds.forEach { WidgetStateStore.clearPage(ctx, it) }
+        super.onDeleted(ctx, appWidgetIds)
     }
 
     companion object {
@@ -92,11 +125,20 @@ class DshWidgetProvider : AppWidgetProvider() {
         /** 工作区 id 的 extra 名。 */
         const val EXTRA_WORKSPACE_ID = "workspace_id"
 
+        /** 翻页：`sessions` ↔ `workspaces`。 */
+        const val ACTION_SWITCH_PAGE = "com.dshgo.app.WIDGET_SWITCH_PAGE"
+
+        /** 在工作区页选了某个工作区（集合视图的模板广播）。 */
+        const val ACTION_PICK_WORKSPACE = "com.dshgo.app.WIDGET_PICK_WORKSPACE"
+
+        /** 翻页传的参数：目标页名。 */
+        const val EXTRA_PAGE = "page"
+
+        /** 集合视图点击时回传的组件实例号，多实例下各自翻页互不影响。 */
+        const val EXTRA_APPWIDGET_ID = "appwidget_id"
+
         /** 头部最多并排几枚工作区胶囊，多的收进「+N」。3 枚 3×2 宽度刚好。 */
         private const val MAX_CHIPS = 3
-
-        /** 卡片上最多显示几条会话。加了摘要行之后一行更占地方，3 条是 3×2 的舒适上限。 */
-        private const val MAX_SESSIONS = 4
 
         /** 点右上角刷新：强制拉一次快照，跳过节流。 */
         private const val ACTION_REFRESH = "com.dshgo.app.widget.REFRESH"
@@ -119,7 +161,10 @@ class DshWidgetProvider : AppWidgetProvider() {
                     ComponentName(ctx, DshWidgetProvider::class.java),
                 )
                 if (ids.isEmpty()) return
-                ids.forEach { manager.updateAppWidget(it, buildViews(ctx, summary, state)) }
+                ids.forEach { manager.updateAppWidget(it, buildViews(ctx, summary, state, it)) }
+                // 与 onUpdate 同理：集合视图的数据要单独通知一次才会重建。
+                manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_list)
+                manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_ws_list)
             }
         }
 
@@ -127,6 +172,7 @@ class DshWidgetProvider : AppWidgetProvider() {
             ctx: Context,
             summary: SessionWatcher.Summary,
             state: WidgetState?,
+            appWidgetId: Int,
         ): RemoteViews = RemoteViews(ctx.packageName, R.layout.widget_dsh).apply {
 
             val workspaces = state?.workspaces.orEmpty()
@@ -172,7 +218,10 @@ class DshWidgetProvider : AppWidgetProvider() {
                     more.setTextViewText(R.id.widget_chip_text, "+" + (workspaces.size - chips.size))
                     more.setInt(R.id.widget_chip_text, "setBackgroundResource", R.drawable.widget_chip_plain)
                     more.setTextColor(R.id.widget_chip_text, ctx.getColor(R.color.wg_chip_text))
-                    more.setOnClickPendingIntent(R.id.widget_chip_text, nextWorkspace(ctx))
+                    more.setOnClickPendingIntent(
+                        R.id.widget_chip_text,
+                        pageTap(ctx, appWidgetId, WidgetStateStore.PAGE_WORKSPACES),
+                    )
                     addView(R.id.widget_chips, more)
                 }
             }
@@ -193,62 +242,46 @@ class DshWidgetProvider : AppWidgetProvider() {
 
             setOnClickPendingIntent(R.id.widget_refresh, refreshTap(ctx, 60))
 
-            val sessions = workspace?.sessions.orEmpty().take(MAX_SESSIONS)
-            removeAllViews(R.id.widget_rows)
-            if (sessions.isEmpty()) {
-                setViewVisibility(R.id.widget_rows, View.GONE)
-                setViewVisibility(R.id.widget_fallback, View.VISIBLE)
-                setTextViewText(R.id.widget_fallback, fallbackText(ctx, state, summary))
+            // 会话列表交给 WidgetListService：只有集合视图（ListView）能滚动，
+            // 显示几条由 Factory 按可用高度决定，这里只负责接线、空列表文案与点击模板。
+            // 必须用带 appWidgetId 的重载：两参版本是 API 31 才加的，minSdk 26 上会崩。
+            applyRowPadding(ctx, this, appWidgetId)
+            val page = WidgetStateStore.page(ctx, appWidgetId)
+            val onWorkspaces = page == WidgetStateStore.PAGE_WORKSPACES
+            setViewVisibility(
+                R.id.widget_page_sessions,
+                if (onWorkspaces) View.GONE else View.VISIBLE,
+            )
+            setViewVisibility(
+                R.id.widget_page_workspaces,
+                if (onWorkspaces) View.VISIBLE else View.GONE,
+            )
+            // 工作区页不显示胶囊条：这一页本身就是选择器，再叠一排胶囊只会让人点错。
+            if (onWorkspaces) setViewVisibility(R.id.widget_chips, View.GONE)
+            // 鲸鱼图标兼作「工作区菜单」入口：胶囊放得下时直接点胶囊，放不下时点这里。
+            setOnClickPendingIntent(
+                R.id.widget_whale,
+                pageTap(ctx, appWidgetId, WidgetStateStore.PAGE_WORKSPACES),
+            )
+            setOnClickPendingIntent(
+                R.id.widget_ws_back,
+                pageTap(ctx, appWidgetId, WidgetStateStore.PAGE_SESSIONS),
+            )
+            setTextViewText(R.id.widget_fallback, fallbackText(ctx, state, summary))
+            if (onWorkspaces) {
+                val wsIntent = Intent(ctx, WorkspaceListService::class.java)
+                    .putExtra(WorkspaceListService.EXTRA_APPWIDGET_ID, appWidgetId)
+                setRemoteAdapter(appWidgetId, R.id.widget_ws_list, wsIntent)
+                setPendingIntentTemplate(R.id.widget_ws_list, pickWorkspaceTemplate(ctx, appWidgetId))
+                setEmptyView(R.id.widget_ws_list, R.id.widget_fallback)
             } else {
-                setViewVisibility(R.id.widget_rows, View.VISIBLE)
-                setViewVisibility(R.id.widget_fallback, View.GONE)
-                val approvalRows = approvalRows(sessions, summary)
-                sessions.forEachIndexed { index, session ->
-                    val row = RemoteViews(ctx.packageName, R.layout.widget_dsh_row)
-                    row.setImageViewResource(
-                        R.id.widget_row_dot,
-                        when {
-                            approvalRows.contains(index) -> R.drawable.widget_dot_approval
-                            session.isRunning -> R.drawable.widget_dot_running
-                            else -> R.drawable.widget_dot_idle
-                        },
-                    )
-                    row.setTextViewText(
-                        R.id.widget_row_title,
-                        session.title.ifBlank { ctx.getString(R.string.widget_untitled_session) },
-                    )
-                    // 摘要：端点没给就整行隐藏，不留一条空白。
-                    val summary = session.summary?.trim().orEmpty()
-                    if (summary.isEmpty()) {
-                        row.setViewVisibility(R.id.widget_row_summary, View.GONE)
-                    } else {
-                        row.setViewVisibility(R.id.widget_row_summary, View.VISIBLE)
-                        row.setTextViewText(R.id.widget_row_summary, summary)
-                    }
-                    // 没有上下文数据就显示「—」：0% 会被读成「几乎为空」，是错误信息。
-                    row.setTextViewText(
-                        R.id.widget_row_pct,
-                        session.contextPercent?.let { "$it%" } ?: "—",
-                    )
-                    row.setViewVisibility(
-                        R.id.widget_row_divider,
-                        if (index == sessions.lastIndex) View.GONE else View.VISIBLE,
-                    )
-                    // 点这一行 → 直接进这条会话（写 localStorage + 重载，见 MainActivity）。
-                    row.setOnClickPendingIntent(
-                        R.id.widget_row_title,
-                        sessionTap(ctx, session.id, 40 + index),
-                    )
-                    row.setOnClickPendingIntent(
-                        R.id.widget_row_summary,
-                        sessionTap(ctx, session.id, 40 + index),
-                    )
-                    row.setOnClickPendingIntent(
-                        R.id.widget_row_dot,
-                        sessionTap(ctx, session.id, 40 + index),
-                    )
-                    addView(R.id.widget_rows, row)
-                }
+                setRemoteAdapter(
+                    appWidgetId,
+                    R.id.widget_list,
+                    Intent(ctx, WidgetListService::class.java),
+                )
+                setPendingIntentTemplate(R.id.widget_list, sessionTemplate(ctx))
+                setEmptyView(R.id.widget_list, R.id.widget_fallback)
             }
 
             // 左下角：待审批优先，其次正在跑的会话总数；右下角：DeepSeek 高峰/低峰。
@@ -265,30 +298,14 @@ class DshWidgetProvider : AppWidgetProvider() {
                 setViewVisibility(R.id.widget_running, View.GONE)
             }
             val pricing = state?.pricingLabel?.trim().orEmpty()
-            if (pricing.isEmpty()) {
+            val status = WidgetRefresher.statusText().trim()
+            val footer = listOf(pricing, status).filter { it.isNotEmpty() }.joinToString(" · ")
+            if (footer.isEmpty()) {
                 setViewVisibility(R.id.widget_footer, View.GONE)
             } else {
                 setViewVisibility(R.id.widget_footer, View.VISIBLE)
-                setTextViewText(R.id.widget_footer, pricing)
+                setTextViewText(R.id.widget_footer, footer)
             }
-        }
-
-        /**
-         * 哪几行标「有审批」。
-         *
-         * 端点目前没有按会话给出审批（`ApprovalAsk` 里也没有 sessionId），所以：
-         * 会话自己带了 pendingApproval 就信它；否则把审批算到**第一条 running** 上
-         * ——总比整卡没有橙点、用户不知道有东西在等要好。将来端点补字段后这里自动准确。
-         */
-        private fun approvalRows(
-            sessions: List<WidgetState.Session>,
-            summary: SessionWatcher.Summary,
-        ): Set<Int> {
-            val explicit = sessions.indices.filter { sessions[it].pendingApproval }
-            if (explicit.isNotEmpty()) return explicit.toSet()
-            if (summary.approvals <= 0) return emptySet()
-            val firstRunning = sessions.indexOfFirst { it.isRunning }
-            return if (firstRunning >= 0) setOf(firstRunning) else emptySet()
         }
 
         /** 没有会话可画时的文案。顺序：缓存缺失 → 全局计数 → 空工作区。 */
@@ -331,6 +348,81 @@ class DshWidgetProvider : AppWidgetProvider() {
             )
         }
 
+        /**
+         * 让列表停在整数行上：先按可用高度算出能放几整行，剩下的余量交给预置垫片。
+         *
+         * RemoteViews 在 minSdk 26 上不能动态改高度（`setViewLayoutHeight` 是 API 31 才有的），
+         * 所以布局里预置了 0/8/16/24/32/40dp 六档垫片，这里只挑一档显示，其余隐藏。
+         * 效果：卡片底边永远落在整行边界上，不会露出半截行。
+         */
+        private fun applyRowPadding(ctx: Context, views: RemoteViews, appWidgetId: Int) {
+            val padIds = intArrayOf(
+                R.id.widget_row_pad0, R.id.widget_row_pad1, R.id.widget_row_pad2,
+                R.id.widget_row_pad3, R.id.widget_row_pad4, R.id.widget_row_pad5,
+            )
+            val density = ctx.resources.displayMetrics.density.toDouble()
+            val options = runCatching {
+                AppWidgetManager.getInstance(ctx).getAppWidgetOptions(appWidgetId)
+            }.getOrNull()
+            val heightPx = (options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT) ?: 0)
+            val heightDp = heightPx / density
+            // 头部一行（鲸鱼/胶囊/余额）+ 上下内边距 + 底栏，约占 78dp；拿不到尺寸时按 3×2 的典型高度退算。
+            val availableDp = (if (heightDp > 0.0) heightDp else 128.0) - HEADER_AND_FOOTER_DP
+            val rows = (availableDp / ROW_HEIGHT_DP).toInt().coerceAtLeast(1)
+            val remainderDp = (availableDp - rows * ROW_HEIGHT_DP).coerceIn(0.0, 40.0)
+            val padIndex = (remainderDp / 8.0).toInt().coerceIn(0, padIds.size - 1)
+            padIds.forEachIndexed { index, id ->
+                views.setViewVisibility(id, if (index == padIndex) View.VISIBLE else View.GONE)
+            }
+        }
+
+        /** 与 `widget_dsh_row.xml` 的根高度保持一致。 */
+        private const val ROW_HEIGHT_DP = 46.0
+
+        /** 头部 + 内外边距 + 底栏的估算高度。 */
+        private const val HEADER_AND_FOOTER_DP = 78.0
+
+        /**
+         * 翻页广播：带上实例号与目标页，多实例互不干扰。
+         *
+         * PendingIntent 的身份只看 `(requestCode, action, data, type, component)` —— **extras 不参与**。
+         * 所以固定 requestCode 会让「鲸鱼（去工作区页）」和「返回（回会话页）」复用同一个
+         * PendingIntent，后创建的那次把 extras 覆盖掉，点上去就像没反应。这里用 data 区分
+         * 实例与目标页，requestCode 再按实例号错开，两个方向各拿身份。
+         */
+        private fun pageTap(ctx: Context, appWidgetId: Int, page: String): PendingIntent {
+            val i = Intent(ctx, DshWidgetProvider::class.java)
+                .setAction(ACTION_SWITCH_PAGE)
+                .setData(Uri.parse("dshgo://page/$appWidgetId/$page"))
+                .putExtra(EXTRA_APPWIDGET_ID, appWidgetId)
+                .putExtra(EXTRA_PAGE, page)
+            return PendingIntent.getBroadcast(
+                ctx,
+                22 + (appWidgetId and 0xFF),
+                i,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
+        /**
+         * 工作区页的点击模板。
+         *
+         * 集合视图只能用模板 + fillInIntent：模板负责动作，fillIn 负责带参数。
+         * 必须可变（FLAG_MUTABLE），否则系统不让我们往里填 extras。
+         */
+        private fun pickWorkspaceTemplate(ctx: Context, appWidgetId: Int): PendingIntent {
+            val i = Intent(ctx, DshWidgetProvider::class.java)
+                .setAction(ACTION_PICK_WORKSPACE)
+                // data 里带实例号：模板的身份要按实例区分，否则两个组件共用一份、extras 互相覆盖。
+                .setData(Uri.parse("dshgo://pick/$appWidgetId"))
+            return PendingIntent.getBroadcast(
+                ctx,
+                23 + (appWidgetId and 0xFF),
+                i,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+        }
+
         private fun selectWorkspace(ctx: Context, workspaceId: String, code: Int): PendingIntent {
             val i = Intent(ctx, DshWidgetProvider::class.java)
                 .setAction(ACTION_SELECT_WORKSPACE)
@@ -355,15 +447,20 @@ class DshWidgetProvider : AppWidgetProvider() {
             )
         }
 
-        private fun sessionTap(ctx: Context, sessionId: String, code: Int): PendingIntent {
+        /**
+         * 集合视图的点击模板。
+         *
+         * ListView 里每一行不能各带一个 PendingIntent（RemoteViews 只允许模板），
+         * 所以模板用可变 PendingIntent，行里用 setOnClickFillInIntent 塞会话 id。
+         */
+        private fun sessionTemplate(ctx: Context): PendingIntent {
             val i = Intent(ctx, MainActivity::class.java)
-                .putExtra(NotificationCenter.EXTRA_SESSION_ID, sessionId)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             return PendingIntent.getActivity(
                 ctx,
-                code,
+                70,
                 i,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
         }
 

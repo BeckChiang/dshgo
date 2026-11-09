@@ -3,6 +3,8 @@ package com.dshgo.app
 import androidx.compose.foundation.layout.statusBarsPadding
 import com.dshgo.app.ui.ConnectionsScreen
 import com.dshgo.app.data.ConnectionStore
+import com.dshgo.app.data.AutoRoute
+import com.dshgo.app.data.NetWatcher
 import com.dshgo.app.data.ConnectionProbe
 import com.dshgo.app.data.Connection
 import androidx.biometric.BiometricManager
@@ -397,6 +399,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         maybeHandleShare(intent)
         // 从通知点进来 / 冷启动时带过来的目标会话
         consumeOpenSession(intent)
+        // 冷启动是唯一能读到「上次进程怎么死的」的时机（ApplicationExitInfo 只在这里可靠）。
+        com.dshgo.app.data.CrashCenter.capture(this)
+        com.dshgo.app.data.EventLog.event(this, "app", "onCreate v${BuildConfig.VERSION_NAME}")
         if (prefs.notifyEnabled()) startWatching()
 
         // 后台查一次更新（内部有 24 小时节流，失败静默）
@@ -417,15 +422,60 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         )
     }
 
+    /** 网络切换后要还原的滚动位置；-1 表示没有待还原的。 */
+    private var pendingScrollY: Int = -1
+
+    /**
+     * 手动选路的记忆。
+     *
+     * 用户一旦在连接列表里点了某台设备，就说明「我知道我要连哪」——
+     * 这时后台探测再把地址换回局域网，看起来就是「隧道进去后地址自己变了」。
+     * 只有网络类型变化（Wi-Fi ↔ 蜂窝）时清掉这个标记，让自动选路重新生效。
+     */
+    private val routePrefs by lazy { getSharedPreferences("dshgo_route", MODE_PRIVATE) }
+
+    private fun manualRoute(): Boolean = routePrefs.getBoolean("manual", false)
+
+    private fun setManualRoute(v: Boolean) {
+        routePrefs.edit().putBoolean("manual", v).apply()
+    }
+
+    /** 原地重连但记住滚动位置：网络切换、隧道切换都走这里。 */
+    private fun reloadKeepingPosition() {
+        if (!::webView.isInitialized) return
+        webView.evaluateJavascript(
+            "String(window.scrollY||document.documentElement.scrollTop||0)",
+        ) { raw ->
+            pendingScrollY = raw?.trim('"')?.toFloatOrNull()?.toInt() ?: 0
+            runCatching { webView.reload() }
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         // 前后台切换会决定「审批由谁接管」：前台交给页面，后台由 App 发通知/更新小组件。
         // 之前这个回调没有任何调用方，appForeground 永远是 true ——
         // 于是审批既不进通知也不进小组件计数。
         SessionWatcher.onForegroundChanged(true)
+        // Wi-Fi ↔ 蜂窝 切换后 WebView 里那条连接已经废了：先按「是否在同一局域网」重选地址，
+        // 没有更合适的再原地重连，并且保留滚动位置。
+        NetWatcher.attach(this) {
+            runOnUiThread {
+                if (!::webView.isInitialized) return@runOnUiThread
+                val current = webView.url ?: return@runOnUiThread
+                if (!current.startsWith("http")) return@runOnUiThread
+                val target = AutoRoute.pick(this, ConnectionStore.all(this), current)
+                if (target != null && target != current) {
+                    webView.loadUrl(target, themeHeaders())
+                } else {
+                    reloadKeepingPosition()
+                }
+            }
+        }
     }
 
     override fun onStop() {
+        NetWatcher.detach()
         SessionWatcher.onForegroundChanged(false)
         super.onStop()
     }
@@ -613,6 +663,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 if (view !== webView) return
                 loaded = true
                 clearLoadTimeout()
+
+                // 网络切换后的原地重连：把滚动位置还原，别让用户回到顶部重找会话。
+                if (pendingScrollY >= 0) {
+                    val y = pendingScrollY
+                    pendingScrollY = -1
+                    view.evaluateJavascript(
+                        "(function(){var y=$y;window.scrollTo(0,y);" +
+                            "var s=document.scrollingElement||document.documentElement;" +
+                            "if(s){s.scrollTop=y;}})()",
+                        null,
+                    )
+                }
 
                 // 从通知点进来的目标会话：页面刚就绪，正好写 localStorage
                 pendingSessionId?.let { pending ->
@@ -1145,6 +1207,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      * 改错了反而更找不回来。
      */
     private fun autoPickAddress() {
+        // 手动选过就不插手：见 manualRoute() 的说明。
+        if (manualRoute()) return
         val known = prefs.knownUrls()
         if (known.size < 2) return
         lifecycleScope.launch {
@@ -1164,7 +1228,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val cm = getSystemService(ConnectivityManager::class.java) ?: return
             cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: android.net.Network) {
-                    // 系统刚切换网络，底层的地址很可能已经变了
+                    // 系统刚切换网络，底层的地址很可能已经变了。
+                    // 这也是唯一让「手动选择」失效的时机：换网络了，原来的选择不再有意义。
+                    setManualRoute(false)
                     handler.postDelayed({ autoPickAddress() }, 1500)
                 }
             })
@@ -1379,6 +1445,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      * （事件流会把地址闭包捕获，不重开就一直连着旧的那台）。
      */
     private fun switchTo(conn: Connection) {
+        // 手动选择优先：记下来，后台探测别再把地址改回去。
+        setManualRoute(true)
         ConnectionStore.markUsed(this, conn.id)
         prefs.setEntryUrl(conn.url)
         prefs.rememberUrl(conn.url)

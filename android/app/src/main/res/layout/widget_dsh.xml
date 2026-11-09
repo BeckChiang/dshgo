@@ -97,13 +97,100 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- 会话行容器：由 provider 用 addView 逐条塞进 widget_dsh_row -->
+    <!-- 第一页：会话列表。集合视图才能滚动（普通 LinearLayout 塞几行就是几行），
+         高度必须走 layout_weight —— 写 wrap_content 在部分启动器上会塌成 0 高。 -->
     <LinearLayout
-        android:id="@+id/widget_rows"
+        android:id="@+id/widget_page_sessions"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
         android:layout_marginTop="4dp"
-        android:orientation="vertical" />
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <ListView
+            android:id="@+id/widget_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:divider="@null"
+            android:dividerHeight="0dp"
+            android:scrollbars="vertical" />
+
+        <!-- 底部余量垫片：RemoteViews 不能动态设高度，所以预置几档，
+             由 provider 按「可用高度 − 整数行」选一档显示，卡片边缘就不会露半截行。 -->
+        <TextView
+            android:id="@+id/widget_row_pad0"
+            android:layout_width="match_parent"
+            android:layout_height="0dp" />
+        <TextView
+            android:id="@+id/widget_row_pad1"
+            android:layout_width="match_parent"
+            android:layout_height="8dp" />
+        <TextView
+            android:id="@+id/widget_row_pad2"
+            android:layout_width="match_parent"
+            android:layout_height="16dp" />
+        <TextView
+            android:id="@+id/widget_row_pad3"
+            android:layout_width="match_parent"
+            android:layout_height="24dp" />
+        <TextView
+            android:id="@+id/widget_row_pad4"
+            android:layout_width="match_parent"
+            android:layout_height="32dp" />
+        <TextView
+            android:id="@+id/widget_row_pad5"
+            android:layout_width="match_parent"
+            android:layout_height="40dp" />
+    </LinearLayout>
+
+    <!-- 第二页：工作区选择。工作区多少都不怕，同样是可滚动的集合视图。 -->
+    <LinearLayout
+        android:id="@+id/widget_page_workspaces"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="4dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/widget_workspace_title"
+                android:textColor="@color/wg_detail"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/widget_ws_back"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="8dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="2dp"
+                android:paddingBottom="2dp"
+                android:text="@string/widget_back"
+                android:textColor="@color/wg_pill_text"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <ListView
+            android:id="@+id/widget_ws_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="2dp"
+            android:layout_weight="1"
+            android:divider="@null"
+            android:dividerHeight="0dp"
+            android:scrollbars="vertical" />
+    </LinearLayout>
 
     <!-- 没有可显示的数据时的降级文案（不显示 0 / 假数据） -->
     <TextView
@@ -117,12 +204,6 @@
         android:textColor="@color/wg_detail"
         android:textSize="11.5sp"
         android:visibility="gone" />
-
-    <!-- 弹性空隙：把底栏压到卡片最下方 -->
-    <TextView
-        android:layout_width="1dp"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
 
     <!-- 底栏：左边「N 个在跑」，右边「高峰 / 低峰」 -->
     <LinearLayout

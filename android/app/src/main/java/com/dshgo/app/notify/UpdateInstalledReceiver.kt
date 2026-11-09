@@ -46,7 +46,7 @@ class UpdateInstalledReceiver : BroadcastReceiver() {
         }.getOrNull().orEmpty()
 
         val n = NotificationCompat.Builder(context, NotificationCenter.CHANNEL_WATCH)
-            .setSmallIcon(R.drawable.ic_notify)
+            .setSmallIcon(R.drawable.ic_notify_f)
             .setContentTitle("已更新到 $version")
             .setContentText("点一下回到 Fnh Go")
             .setContentIntent(pi)

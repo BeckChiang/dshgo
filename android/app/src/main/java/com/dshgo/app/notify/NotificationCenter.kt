@@ -124,7 +124,7 @@ object NotificationCenter {
         if (!granted(ctx)) return false
         ensureDoneChannel(ctx)   // 发之前才建 —— 此时权限已经有了
         val n = NotificationCompat.Builder(ctx, CHANNEL_DONE)
-            .setSmallIcon(R.drawable.ic_notify)
+            .setSmallIcon(R.drawable.ic_notify_f)
             .setContentTitle("测试通知")
             .setContentText("能看到这条、能听到提示音，就说明设置对了")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -234,7 +234,7 @@ object NotificationCenter {
 
         val body = notice.detail ?: "点一下跳到这个会话"
         val n = NotificationCompat.Builder(ctx, CHANNEL_DONE)
-            .setSmallIcon(R.drawable.ic_notify)
+            .setSmallIcon(R.drawable.ic_notify_f)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -273,7 +273,7 @@ object NotificationCenter {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(ctx, CHANNEL_WATCH)
-            .setSmallIcon(R.drawable.ic_notify)
+            .setSmallIcon(R.drawable.ic_notify_f)
             .setContentTitle(summary.title())
             .setContentText(summary.detail(host))
             .setStyle(NotificationCompat.BigTextStyle().bigText(summary.detail(host)))

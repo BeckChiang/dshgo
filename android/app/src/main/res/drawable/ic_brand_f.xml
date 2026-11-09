@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 品牌 F：与启动图标同形，单独抽出来供界面内复用（不再引用旧鲸鱼） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40,32 h30 a4,4 0 0 1 4,4 v8 a4,4 0 0 1 -4,4 h-20 v6 h16 a4,4 0 0 1 4,4 v8 a4,4 0 0 1 -4,4 h-16 v18 a4,4 0 0 1 -4,4 h-6 a4,4 0 0 1 -4,-4 v-52 a4,4 0 0 1 4,-4 z" />
+</vector>

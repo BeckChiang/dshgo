@@ -26,4 +26,7 @@
     <color name="wg_balance_label">#FF7C8698</color>
     <color name="wg_chip_text">#FFA8B2C4</color>
     <color name="wg_pct">#FF95A0B4</color>
+    <!-- 深色下降低不透明度，避免整行发亮；文字色提亮保证对比度 -->
+    <color name="wg_alert_bg">#26F97316</color>
+    <color name="wg_alert_text">#FFFDBA74</color>
 </resources>

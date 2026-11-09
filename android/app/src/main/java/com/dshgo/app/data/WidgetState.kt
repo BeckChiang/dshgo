@@ -44,6 +44,8 @@ data class WidgetState(
         val pendingApproval: Boolean,
         /** 最后一条可读消息的摘要；端点上没有就为 null，渲染层隐藏这一行。 */
         val summary: String? = null,
+        /** 是否被置顶（端点暂未稳定提供，缺省 false；有了就在运行组内加权）。 */
+        val pinned: Boolean = false,
     ) {
         val isRunning: Boolean get() = status == "running" || status == "live"
     }
@@ -146,6 +148,7 @@ data class WidgetState(
                             s.optBoolean("pendingApproval", false) ||
                             s.optInt("approvals", 0) > 0,
                         summary = if (s.isNull("summary")) null else s.optString("summary").takeIf { it.isNotBlank() },
+                        pinned = s.optBoolean("pinned", false),
                     ),
                 )
             }
@@ -167,6 +170,11 @@ object WidgetStateStore {
     private const val KEY_JSON = "state_json"
     private const val KEY_SAVED_AT = "saved_at"
     private const val KEY_WORKSPACE = "workspace_id"
+    private const val KEY_PAGE_PREFIX = "page_"
+
+    /** 两页的名字：会话列表 / 工作区选择。 */
+    const val PAGE_SESSIONS = "sessions"
+    const val PAGE_WORKSPACES = "workspaces"
 
     private fun sp(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -184,6 +192,23 @@ object WidgetStateStore {
     }
 
     fun savedAt(ctx: Context): Long = sp(ctx).getLong(KEY_SAVED_AT, 0L)
+
+    /**
+     * 当前显示的是哪一页：`sessions` 或 `workspaces`。
+     *
+     * 按组件实例 id 分开存：桌面上可能放了两个组件、各自停在不同页，
+     * 共用一个值会让它们互相跳页。
+     */
+    fun page(ctx: Context, appWidgetId: Int): String =
+        sp(ctx).getString(KEY_PAGE_PREFIX + appWidgetId, PAGE_SESSIONS) ?: PAGE_SESSIONS
+
+    fun setPage(ctx: Context, appWidgetId: Int, page: String) {
+        sp(ctx).edit().putString(KEY_PAGE_PREFIX + appWidgetId, page).commit()
+    }
+
+    fun clearPage(ctx: Context, appWidgetId: Int) {
+        sp(ctx).edit().remove(KEY_PAGE_PREFIX + appWidgetId).commit()
+    }
 
     fun selectedWorkspaceId(ctx: Context): String? =
         sp(ctx).getString(KEY_WORKSPACE, null)?.ifBlank { null }

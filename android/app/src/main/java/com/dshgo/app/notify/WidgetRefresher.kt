@@ -36,6 +36,32 @@ object WidgetRefresher {
 
     enum class Outcome { Unknown, Ok, Locked, Offline }
 
+    /** 最近一次成功拉取的时间；0 = 还没成功过。 */
+    @Volatile
+    var lastOkAt: Long = 0L
+        private set
+
+    /**
+     * 给小组件底部用的一行状态。
+     *
+     * 为什么需要它：拉取失败时小组件会保留上一次的缓存 —— 看起来「通知里 3 个在跑，
+     * 小组件还是 1 个」，其实是一次 401/断网被静默吞掉了。把失败原因写出来，
+     * 用户点一下就能判断是「没连上」还是「需要解锁」。
+     */
+    fun statusText(): String {
+        val base = when (lastOutcome) {
+            Outcome.Ok -> ""
+            Outcome.Locked -> "需要解锁"
+            Outcome.Offline -> "未连接"
+            Outcome.Unknown -> "尚未刷新"
+        }
+        return if (lastOkAt > 0) {
+            val t = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(lastOkAt))
+            if (base.isEmpty()) "更新于 $t" else "$base · 上次 $t"
+        } else base
+    }
+
     /**
      * 拉一次快照并重绘所有小组件实例。
      *
@@ -57,6 +83,7 @@ object WidgetRefresher {
                     is WidgetStateClient.Result.Ok -> {
                         WidgetStateStore.save(app, r.raw)
                         lastOutcome = Outcome.Ok
+                        lastOkAt = System.currentTimeMillis()
                     }
                     WidgetStateClient.Result.Locked -> lastOutcome = Outcome.Locked
                     is WidgetStateClient.Result.Failed -> {
@@ -66,6 +93,7 @@ object WidgetRefresher {
                 }
                 // 无论成败都重绘：成功换新数据，失败退回缓存/降级文案。
                 DshWidgetProvider.update(app, SessionWatcher.summary.value)
+                ScheduleWidgetProvider.update(app)
             }
         }
     }

@@ -1,6 +1,11 @@
 package com.dshgo.app.ui
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.platform.LocalContext
+import com.dshgo.app.tunnel.TsTunnel
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.Color
@@ -117,6 +122,13 @@ fun SetupScreen(
 ) {
     var text by remember { mutableStateOf(initialUrl) }
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    // 两条地址分开存：家里用局域网那句，出门用 Tailscale 那句，回来不用重填。
+    val prefs = remember {
+        context.getSharedPreferences("dshgo_connect", Context.MODE_PRIVATE)
+    }
+    var tailText by remember { mutableStateOf(prefs.getString(PREF_TAIL, "") ?: "") }
+    var autoRoute by remember { mutableStateOf(prefs.getBoolean(PREF_AUTO, true)) }
 
     Scaffold(
         modifier = modifier,
@@ -189,16 +201,13 @@ fun SetupScreen(
                         onValueChange = { text = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        label = { Text("入口地址") },
+                        label = { Text("局域网地址") },
                         placeholder = { Text("http://192.168.1.100:3081") },
                         shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Uri,
-                            imeAction = ImeAction.Go,
+                            imeAction = ImeAction.Next,
                         ),
-                        keyboardActions = KeyboardActions(onGo = {
-                            if (text.isNotBlank()) onConnect(text)
-                        }),
                         trailingIcon = {
                             TextButton(onClick = {
                                 val clip = clipboard.getText()?.text
@@ -214,6 +223,84 @@ fun SetupScreen(
                             }
                         },
                     )
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // 第二条地址专供外网：Tailscale 给的是 100.x.x.x，和在家的局域网 IP 是两套。
+                    // 两个都填上，出门/回家不用回来改设置。
+                    OutlinedTextField(
+                        value = tailText,
+                        onValueChange = {
+                            tailText = it
+                            prefs.edit().putString(PREF_TAIL, it.trim()).apply()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Tailscale 地址（可选）") },
+                        placeholder = { Text("http://100.x.x.x:3081") },
+                        shape = RoundedCornerShape(14.dp),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Go,
+                        ),
+                        keyboardActions = KeyboardActions(onGo = {
+                            val pick = if (autoRoute) autoPickUrl(context, text, tailText) else text
+                            if (pick.isNotBlank()) onConnect(pick)
+                        }),
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "自动选路",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                if (tailText.isBlank()) "填了 Tailscale 地址才会自动切换"
+                                else "Wi-Fi 走局域网，移动网络走 Tailscale",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = autoRoute,
+                            onCheckedChange = {
+                                autoRoute = it
+                                prefs.edit().putBoolean(PREF_AUTO, it).apply()
+                            },
+                        )
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+
+                    // Tailscale 登录/状态就在连接页给位置：不用先进 DSH 再翻设置。
+                    val tsState = remember { TsTunnel.state(context) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Tailscale",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                if (tsState.isBlank()) "未启动" else tsState,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = { TsTunnel.startLogin(context) }) {
+                            Text("登录", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
 
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -244,7 +331,10 @@ fun SetupScreen(
                     Spacer(Modifier.height(18.dp))
 
                     Button(
-                        onClick = { if (text.isNotBlank()) onConnect(text) },
+                        onClick = {
+                            val pick = if (autoRoute) autoPickUrl(context, text, tailText) else text
+                            if (pick.isNotBlank()) onConnect(pick)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
@@ -320,7 +410,7 @@ private fun BrandMark(size: Int = 62) {
     ) {
         // 复用启动图标里的终端提示符矢量，品牌形象与桌面图标一致
         Icon(
-            painter = painterResource(R.drawable.ic_launcher_foreground),
+            painter = painterResource(R.drawable.ic_brand_f),
             contentDescription = null,
             tint = androidx.compose.ui.graphics.Color.White,
             modifier = Modifier.size(size.dp),
@@ -347,7 +437,7 @@ private fun Color8(v: Int) = androidx.compose.ui.graphics.Color(0xFF000000.toInt
  * 比再加几个分割线有用。
  */
 @Composable
-private fun SettingsGroupTitle(text: String) {
+internal fun SettingsGroupTitle(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelMedium,
@@ -856,6 +946,25 @@ fun SettingsSheet(
             }
 
             Spacer(Modifier.height(22.dp))
+
+            TsTunnelSection()
+
+            Spacer(Modifier.height(10.dp))
+            val tunnelCtx = androidx.compose.ui.platform.LocalContext.current
+            OutlinedActionButton(
+                label = "Tailscale 登录与隧道",
+                tint = MaterialTheme.colorScheme.primary,
+                onClick = {
+                    runCatching {
+                        tunnelCtx.startActivity(
+                            android.content.Intent(tunnelCtx, TunnelLoginActivity::class.java),
+                        )
+                    }
+                },
+            )
+
+            Spacer(Modifier.height(18.dp))
+            DiagnosticsSection()
 
             SettingsGroupTitle("关于")
             Spacer(Modifier.height(8.dp))
@@ -2056,7 +2165,7 @@ private fun ConnectionCard(
                     probing -> "检查中…"
                     status == null -> "未检查"
                     !status.online -> status.error.ifEmpty { "连不上" }
-                    !status.listening -> "插件在，但没在监听 —— 看电脑上的启动日志"
+                    !status.listening -> "连到了，但转发层没在监听（电脑上 dshgo 没起来）"
                     else -> buildString {
                         append(status.ms).append(" ms")
                         if (status.version.isNotEmpty()) append(" · v").append(status.version)
@@ -2141,4 +2250,30 @@ private fun EditConnectionDialog(
             }
         },
     )
+}
+
+// ---------------- 连接页：两条地址 + 自动选路 ----------------
+
+private const val PREF_TAIL = "tail_url"
+private const val PREF_AUTO = "auto_route"
+
+/** 当前是否接在 Wi-Fi / 以太网上：家里局域网只有这两种网络能直连。 */
+private fun isOnWifi(context: Context): Boolean {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+    val network = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(network) ?: return false
+    return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+}
+
+/** 自动选路：Wi-Fi 优先局域网地址，移动网络优先 Tailscale 地址；空的那条自然退到另一条。 */
+private fun autoPickUrl(context: Context, lan: String, tail: String): String {
+    val l = Prefs.normalize(lan)
+    val t = Prefs.normalize(tail)
+    return when {
+        t.isBlank() -> l
+        l.isBlank() -> t
+        isOnWifi(context) -> l
+        else -> t
+    }
 }

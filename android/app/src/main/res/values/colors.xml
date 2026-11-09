@@ -8,6 +8,8 @@
   每个语义名在这里给浅色值，深色值在 values-night/colors.xml。
 -->
 <resources>
+    <!-- 应用图标底：官方 logo 是白底上的灰 F + 蓝色块，背景就用白，前景走 mipmap 位图。 -->
+    <color name="ic_launcher_bg">#FFFFFFFF</color>
     <!-- 卡片 -->
     <color name="wg_card">#FFFFFFFF</color>
     <color name="wg_card_border">#FFE6E9EF</color>
@@ -40,4 +42,7 @@
     <color name="wg_chip_text">#FF6B7484</color>
     <!-- 上下文占比：比标题弱一档，但要能读 -->
     <color name="wg_pct">#FF7C8595</color>
+    <!-- 等审批行的浅橙底与文字色：只在这一类行上用，不参与主题切换以外的任何语义 -->
+    <color name="wg_alert_bg">#1AF97316</color>
+    <color name="wg_alert_text">#FFC2410C</color>
 </resources>
