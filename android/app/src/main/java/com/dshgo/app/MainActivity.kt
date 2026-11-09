@@ -657,6 +657,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 if (ui.pageError != null) ui = ui.copy(pageError = null)
             }
 
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                if (view !== webView) return
+                // 首帧已经画出来了就撤遮罩，不必等子资源全部结束。
+                // 移动网络下 onPageFinished 常常比首帧晚 2–5 秒，那几秒里用户看到的
+                // 只是转圈，而页面其实早就能点了。
+                if (ui.screen == Screen.Dsh && ui.pageError == null && !ui.dshReady) {
+                    ui = ui.copy(dshReady = true)
+                }
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 // ★ 池子里可能有两个 WebView。非活跃那个的加载结果不能覆盖当前连接的
                 //   loaded / pendingSessionId / pageError —— 否则切回去会看到别人的错误。

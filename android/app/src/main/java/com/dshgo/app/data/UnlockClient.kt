@@ -64,6 +64,10 @@ object UnlockClient {
                 .header("User-Agent", UA)
                 .build()
             client.newCall(req).execute().use { resp ->
+                // 401 = 闸门正在拦我们（没解锁 / 解锁 cookie 的 authority 失效），
+                // 这种情况必须当作"需要解锁"，否则会直接去加载，得到一张卡住的页面，
+                // 只有用户手动点刷新才走到解锁流程 —— 表现就是"点通知进来一直转圈"。
+                if (resp.code == 401) return@use true
                 if (!resp.isSuccessful) return@use false
                 JSONObject(resp.body?.string().orEmpty()).optBoolean("hasPassword", false)
             }
