@@ -163,28 +163,69 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
         return super.protect(fd);
     }
 
+    // Strong refs so neither the android Builder nor the Go-facing adapter can
+    // be collected while the engine still holds a refnum to them.
+    private static volatile Object keepAndroidBuilder;
+    private static volatile Object keepGoBuilder;
+    /** 包名查不到时置 true：宁可 establish 返回 null（隧道起不来），
+     *  也不要建一条没有任何 allowedApplication 限制的全局 VPN。 */
+    private static volatile boolean blockEstablish;
+
     @Override
     public libtailscale.VPNServiceBuilder newBuilder() {
-        Diagnostics.event(this,8,1,0);
-        Builder builder = new Builder()
-            .setConfigureIntent(PendingIntent.getActivity(this, 0,
-                new Intent(this, MainActivity.class),
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE))
-            .allowFamily(OsConstants.AF_INET)
-            .allowFamily(OsConstants.AF_INET6)
-            .addDnsServer("100.100.100.100")
+        Builder builder = null;
+        try {
+            Diagnostics.event(this,8,1,0);
+            builder = new Builder()
+                .setConfigureIntent(PendingIntent.getActivity(this, 0,
+                    new Intent(this, MainActivity.class),
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE))
+                .allowFamily(OsConstants.AF_INET)
+                .allowFamily(OsConstants.AF_INET6)
+                .addDnsServer("100.100.100.100");
             // 整个 tailnet 网段都要走隧道：只加 100.100.100.100/32 时，
             // 去 100.x 对端设备的流量会绕开隧道走运营商网络，外网就永远连不上。
-            .addRoute("100.64.0.0/10", 10)
-            .addRoute("100.100.100.100", 32);
-        try {
-            // Fail closed if the package cannot be selected: never establish
-            // an unrestricted VPN that changes other applications' routing.
-            builder.addAllowedApplication(getPackageName());
-        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
-            throw new IllegalStateException("DSHgo VPN application not found", e);
+            // 注意 addRoute(String,int) 的第一个参数必须是纯数字地址，掩码单独传：
+            // 传 "100.64.0.0/10" 会抛 IllegalArgumentException: Not a numeric address，
+            // 而 Java 异常跨 gomobile 边界后 Go 侧拿到的是 null builder，
+            // net.go 里 builder.SetMTU 直接 nil 解引用 → 整个进程 SIGABRT（beck.19/20 的闪退）。
+            try {
+                builder.addRoute("100.64.0.0", 10);
+            } catch (Throwable t) {
+                // 网段路由是增强项：失败只降级成「只有 MagicDNS /32」，不抛给 Go。
+                android.util.Log.w("DSHVPN-JAVA", "newBuilder: route 100.64.0.0/10 skipped", t);
+            }
+            try {
+                builder.addRoute("100.100.100.100", 32);
+            } catch (Throwable t) {
+                android.util.Log.w("DSHVPN-JAVA", "newBuilder: route 100.100.100.100/32 skipped", t);
+            }
+            try {
+                // Fail closed if the package cannot be selected: never establish
+                // an unrestricted VPN that changes other applications' routing.
+                // 查不到自己的包名时不抛（抛了就是上面那条闪退路径），改成禁止 establish。
+                builder.addAllowedApplication(getPackageName());
+            } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+                blockEstablish = true;
+                EventLog.event(this, "vpn", "allowed app lookup failed; establish blocked");
+                android.util.Log.e("DSHVPN-JAVA", "newBuilder: allowed app missing, establish blocked", e);
+            }
+            TsBuilder ts = new TsBuilder(builder);
+            keepAndroidBuilder = builder;
+            keepGoBuilder = ts;
+            return ts;
+        } catch (Throwable t) {
+            // 永远不抛：Java 异常跨 gomobile 边界会让 Go 拿到 nil builder 并崩进程。
+            // 这里降级返回一个能用的 builder，让引擎至少拿到 TUN 并自行决定链路状态。
+            android.util.Log.e("DSHVPN-JAVA", "newBuilder degraded: " + t, t);
+            EventLog.event(this, "vpn", "newBuilder degraded: " + t.getClass().getSimpleName());
+            Builder fallback = builder != null ? builder
+                : new Builder().addDnsServer("100.100.100.100");
+            TsBuilder ts = new TsBuilder(fallback);
+            keepAndroidBuilder = fallback;
+            keepGoBuilder = ts;
+            return ts;
         }
-        return new TsBuilder(builder);
     }
 
     @Override
@@ -298,6 +339,10 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
         }
         @Override public void addAddress(String addr, int p) { b.addAddress(addr, p); }
         @Override public libtailscale.ParcelFileDescriptor establish() throws Exception {
+            if (blockEstablish) {
+                android.util.Log.e("DSHVPN-JAVA", "establish blocked: no allowed application");
+                return null;
+            }
             final ParcelFileDescriptor fd = b.establish();
             if (fd == null) return null;
             return new libtailscale.ParcelFileDescriptor() {
