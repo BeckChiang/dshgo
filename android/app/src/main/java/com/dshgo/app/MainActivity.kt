@@ -190,6 +190,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      */
     private var switchAutoReloadArmed = false
 
+    /** 宿主的解锁 cookie 名（`lib/auth.mjs` 的 `UNLOCK_COOKIE`）。同名才能在通道间搬运。 */
+    private val UNLOCK_COOKIE = "dshgo-unlock"
+
     private val handler = Handler(Looper.getMainLooper())
     private var loadTimeout: Runnable? = null
 
@@ -379,7 +382,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     onLockMode = ::setLockMode,
                     // ★ 必须同时关掉设置面板 —— 它是 ModalBottomSheet，
                     //   只改 screen 的话连接页会开在它**后面**，用户看到的还是设置。
-                    onOpenConnections = { ui = ui.copy(screen = Screen.Connections, settingsOpen = false) },
+                    onOpenConnections = {
+                        ui = ui.copy(screen = Screen.Connections, settingsOpen = false)
+                        // ★ 从 DSH 回列表要重读 + 重探：切换过网络之后地址可能已经变了，
+                        //   列表还挂着旧地址的话，点进去必然连不上（用户实测：要手动点刷新）。
+                        refreshConnections()
+                    },
                     onOpenSetupForAdd = { ui = ui.copy(screen = Screen.Setup, setupError = null) },
                     onBackToDsh = { ui = ui.copy(screen = Screen.Dsh) },
                     onSwitchConn = ::switchTo,
@@ -511,6 +519,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         dshReady = false,
                     )
                     ensureThemeCookie(target)
+                    // 同一台电脑的解锁凭据在两条通道间通用，换路时搬过去
+                    carryUnlockCookie(current, target)
                     // ★ 换网络后连接池里那些 socket 还绑在旧网络上。不清掉的话，
                     //   主文档拦截会先尝试复用它们，一直挂到 readTimeout 才失败 ——
                     //   表现就是「换路了但画面不出来，手动刷新一次才有」。
@@ -533,6 +543,24 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     EventLog.event(this@MainActivity, "route", "switch $from -> $to ${hostOf(target)}")
                 } else {
                     reloadKeepingPosition()
+                    // ★ 从外网切回 Wi-Fi 时，ConnectivityManager 报上来的「是否在家」会晚一拍：
+                    //   这一刻 AutoRoute.pick 仍然选回外网地址，于是分支落进这里，顶部地址
+                    //   一格不动（用户实测：内网→外网会变，外网→内网不变）。
+                    //   半秒后按当时的网络状态再选一次，仍然选到不同地址就补一次真正的切换。
+                    val token = this
+                    handler.postDelayed({
+                        if (!::webView.isInitialized) return@postDelayed
+                        val now = webView.url ?: return@postDelayed
+                        if (!now.startsWith("http")) return@postDelayed
+                        val again = AutoRoute.pick(token, ConnectionStore.all(token), now)
+                        if (again != null && again != now) {
+                            val conn = ConnectionStore.all(token).firstOrNull { it.url == again }
+                            if (conn != null) {
+                                EventLog.event(token, "route", "late pick -> ${hostOf(again)}")
+                                switchTo(conn)
+                            }
+                        }
+                    }, 700L)
                 }
             }
         }
@@ -1093,6 +1121,30 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
 
+    /**
+     * 把上一条通道的解锁凭据带到新通道。
+     *
+     * 解锁 cookie（`dshgo-unlock`）是**按主机名**发的：局域网 `192.168.3.21` 和
+     * Tailscale `100.75.57.100` 在浏览器看来是两个站点，各存各的。于是换路之后
+     * 明明还是同一台电脑、同一个密码，却又要输一遍 —— 用户实测反馈就是这个。
+     *
+     * 两条通道指向的是同一台电脑（设备卡按 deviceId 合并过），凭据本来就该通用，
+     * 所以换路时把旧主机的那张 cookie 原样复制到新主机。
+     */
+    private fun carryUnlockCookie(from: String, to: String) {
+        if (from.isEmpty() || to.isEmpty() || from == to) return
+        runCatching {
+            val cm = CookieManager.getInstance()
+            val hit = cm.getCookie(from).orEmpty()
+                .split(';')
+                .map { it.trim() }
+                .firstOrNull { it.startsWith("$UNLOCK_COOKIE=") }
+                ?: return
+            cm.setCookie(to, "$hit; path=/; max-age=${30 * 24 * 60 * 60}")
+            cm.flush()
+        }
+    }
+
     private fun themeHeaders(): Map<String, String> =
         mapOf("X-Fnh-Theme" to if (isDarkNow()) "dark" else "light")
 
@@ -1618,6 +1670,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** 真正把页面载进来（原来直接写在 onHandshake 里的那段）。 */
     private fun loadDsh(entry: String) {
+        // activate() 会把 entryUrl 换成新地址，先记下原来那条 —— 解锁凭据要跨通道搬。
+        val priorEntry = prefs.entryUrl()
         // ★ 先切到这条连接的 WebView，再决定要不要导航。
         //
         // 把 activate() 提到最前面、并且**先判断复用再置 dshReady**，是因为这里踩过一个坑：
@@ -1629,6 +1683,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         // （那条路真的会 loadUrl，于是 onPageFinished 来了）。
         // 实测反馈：「切换后加载失败，要再次重新加载才会成功」—— 就是这个。
         activate(entry)
+        carryUnlockCookie(priorEntry, entry)
 
         val alive = webView.url?.startsWith("http") == true
         if (!alive || prefs.entryUrl() != entry) {
@@ -1827,8 +1882,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             ui.screen == Screen.Dsh && webView.canGoBack() -> webView.goBack()
             // ★ 从 DSH 界面（含锁页）按返回，先回到「选择设备」，而不是一把退出 App。
             //   退出是用户在设备页再按一次返回时的事。
-            ui.screen == Screen.Dsh || ui.screen == Screen.Locked ->
+            ui.screen == Screen.Dsh || ui.screen == Screen.Locked -> {
+                // ★ 回列表时重读连接并重探一遍：切换网络后局域网地址可能已经变了，
+                //   列表要是还挂着旧地址，点进去必然连不上（用户实测反馈）。
                 ui = ui.copy(screen = Screen.Connections)
+                refreshConnections()
+            }
             // 从设置里「更改地址」进来的，给一条退路
             ui.screen == Screen.Setup && loaded -> ui = ui.copy(screen = Screen.Dsh)
             else -> finish()

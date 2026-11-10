@@ -1523,7 +1523,9 @@ fun DshStatusStrip(
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .height(StripHeight)
-                .padding(start = 16.dp, end = 4.dp),
+                // end 收到 0：设置是这一行的最后一个按钮，外面再留 4dp 就会显得「没靠到边」。
+                // IconButton 自己有 12dp 内部留白，视觉上仍然不贴边。
+                .padding(start = 16.dp, end = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 回首页（连接列表）。放在最左 —— 它管的是「现在连着哪个」，
@@ -1537,46 +1539,55 @@ fun DshStatusStrip(
                 )
             }
 
-            // 绿 = 事件流通着；灰 = 断了（断了就收不到完成通知）
-            Box(
-                Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(if (live) DshColor.Running else DshColor.TextFaintLight),
-            )
-            Spacer(Modifier.width(9.dp))
-            Text(
-                host.ifEmpty { "DSH" },
-                modifier = Modifier.weight(1f, fill = false),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.5.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (channel.isNotEmpty()) {
-                Spacer(Modifier.width(6.dp))
-                // 通道标签：Wi-Fi ↔ 蜂窝切换后地址会换，这里跟着变，
-                // 不用再点进设置猜「现在走的是哪条」。
-                Surface(
-                    shape = RoundedCornerShape(5.dp),
-                    color = if (channel == "Tailscale") softAccent(0.18f)
-                    else MaterialTheme.colorScheme.surfaceVariant,
-                ) {
-                    Text(
-                        channel,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
-                        color = if (channel == "Tailscale") DshColor.Accent
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                    )
+            // ★ 绿点 + 地址 + 通道标签按内容宽度排在左边（不占权重），
+            //   然后靠后面那个 Spacer(weight) 把按钮顶到最右。
+            //   以前是「Text 自己 weight(1f, fill=false) + 后面再来一个 Spacer(weight(1f))」——
+            //   两个权重平分剩余空间，地址只占一半、另一半留白，按钮就停在屏幕中间偏右。
+            //   注意别反过来给这一整块加权：那样通道标签会被推到按钮旁边，离开地址。
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 绿 = 事件流通着；灰 = 断了（断了就收不到完成通知）
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(if (live) DshColor.Running else DshColor.TextFaintLight),
+                )
+                Spacer(Modifier.width(9.dp))
+                Text(
+                    host.ifEmpty { "DSH" },
+                    // 不给权重：地址按内容宽度占位，太长的用 ellipsis 截断，
+                    // 免得把通道标签和按钮挤走。
+                    modifier = Modifier.widthIn(max = 168.dp),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (channel.isNotEmpty()) {
+                    Spacer(Modifier.width(6.dp))
+                    // 通道标签：Wi-Fi ↔ 蜂窝切换后地址会换，这里跟着变，
+                    // 不用再点进设置猜「现在走的是哪条」。
+                    Surface(
+                        shape = RoundedCornerShape(5.dp),
+                        color = if (channel == "Tailscale") softAccent(0.18f)
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Text(
+                            channel,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                            color = if (channel == "Tailscale") DshColor.Accent
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                        )
+                    }
                 }
             }
 
-            // ★ 把地址+通道标签留在左边，控件推到最右边。
-            //   以前这一行没有弹性空隙，铃铛/麦克风/刷新紧贴着地址文本，
-            //   看着像「这些按钮属于刚才那个网段」，而且离右手拇指很远。
+            // 剩余空间全部吃掉 —— 这是把铃铛/话筒/刷新/设置顶到最右的那一下。
             Spacer(Modifier.weight(1f))
 
             // 铃铛 + 未读角标
