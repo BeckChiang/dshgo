@@ -26,6 +26,14 @@ data class Connection(
     val url: String,
     /** 上次连上的时间（毫秒），0 = 没连过。用于排序与「最近用过」提示。 */
     val lastUsedAt: Long = 0L,
+    /**
+     * 这台电脑的稳定标识（插件上报）。
+     *
+     * ★ 必须存下来，不能只在探测成功时用：出门在外时局域网那条根本探不到，
+     * 只有 Tailscale 那条能拿到 id —— 不存的话，「同一条电脑的两条地址」
+     * 在出门时永远合并不了，用户看到的是两台机器。
+     */
+    val deviceId: String = "",
 )
 
 /**
@@ -76,6 +84,7 @@ object ConnectionStore {
                     name = o.optString("name"),
                     url = url,
                     lastUsedAt = o.optLong("lastUsedAt", 0L),
+                    deviceId = o.optString("deviceId"),
                 ),
             )
         }
@@ -149,6 +158,29 @@ object ConnectionStore {
     }
 
     /**
+     * 把探测到的 `deviceId` 记进连接里。
+     *
+     * 出门时局域网那条探不到，只有 Tailscale 那条能拿到 id；不落盘的话，
+     * 「同一台电脑的两条地址」在出门时永远并不到一起 —— 用户看到两台机器。
+     * 这里**只在探到了才写**，探不到就保持原值，不会被一次失败抹掉身份。
+     *
+     * 返回写入了几条。
+     */
+    fun rememberDeviceIds(ctx: Context, statuses: Map<String, ConnectionProbe.Status>): Int {
+        val list = all(ctx).toMutableList()
+        var changed = 0
+        for (i in list.indices) {
+            val conn = list[i]
+            val id = statuses[conn.url]?.deviceId.orEmpty()
+            if (id.isBlank() || id == conn.deviceId) continue
+            list[i] = conn.copy(deviceId = id)
+            changed++
+        }
+        if (changed > 0) persist(ctx, list)
+        return changed
+    }
+
+    /**
      * 记下「用过这条」。同时把它设成当前连接。
      *
      * lastUsedAt 是用来排序的 —— 最近连过的排前面，列表顺序才符合直觉。
@@ -202,7 +234,8 @@ object ConnectionStore {
                     .put("id", c.id)
                     .put("name", c.name)
                     .put("url", c.url)
-                    .put("lastUsedAt", c.lastUsedAt),
+                    .put("lastUsedAt", c.lastUsedAt)
+                    .put("deviceId", c.deviceId),
             )
         }
         sp(ctx).edit().putString(KEY_LIST, arr.toString()).commit()
@@ -248,6 +281,7 @@ object ConnectionStore {
                     name = o.optString("name"),
                     url = u,
                     lastUsedAt = o.optLong("lastUsedAt", 0L),
+                    deviceId = o.optString("deviceId"),
                 ),
             )
         }

@@ -114,16 +114,27 @@ object ConnectionProbe {
         val started = System.currentTimeMillis()
 
         val info = runCatching { getJson("$base/__dshgo__/info") }
-            .getOrElse {
+            .getOrElse { t ->
                 // 开了访问密码时，非导航请求一律 401 —— 那是「这台电脑在线，只是要密码」，
                 // 不是「连不上」。以前这里直接判 offline 并把 HTTP 401 标红，把人劝退了。
-                val locked = (it.message ?: "").contains("HTTP 401")
+                //
+                // 401 的响应体里带着设备身份（插件从 0.2.0 起会带）：解锁前拿不到
+                // /info，只能靠它把这条「要密码」并回同一台电脑，否则一台电脑会有两张卡。
+                if (t is HttpError && t.code == 401) {
+                    return@withContext Status(
+                        reachable = true,
+                        locked = true,
+                        ms = System.currentTimeMillis() - started,
+                        needsPassword = true,
+                        deviceId = t.json?.optString("deviceId").orEmpty(),
+                        deviceName = t.json?.optString("deviceName").orEmpty(),
+                        error = "",
+                    )
+                }
                 return@withContext Status(
-                    reachable = locked,
-                    locked = locked,
+                    reachable = false,
                     ms = System.currentTimeMillis() - started,
-                    needsPassword = locked,
-                    error = if (locked) "" else friendly(it),
+                    error = friendly(t),
                 )
             }
 
@@ -163,12 +174,18 @@ object ConnectionProbe {
         return (0 until length()).mapNotNull { i -> optString(i).takeIf { it.isNotBlank() } }
     }
 
+    /** 非 2xx 的响应。带上状态码与已解析的 body —— 401 里也有东西要看。 */
+    private class HttpError(val code: Int, val json: JSONObject?) : Exception("HTTP $code")
+
     private fun getJson(url: String): JSONObject {
         val parsed = url.toHttpUrlOrNull() ?: error("地址格式不对")
         val req = Request.Builder().url(parsed).header("Accept", "application/json").build()
         client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) error("HTTP ${resp.code}")
-            return JSONObject(resp.body?.string().orEmpty())
+            val text = resp.body?.string().orEmpty()
+            val json = runCatching { JSONObject(text) }.getOrNull()
+            // 失败也要把 body 带出去：401 时设备身份就在里面
+            if (!resp.isSuccessful) throw HttpError(resp.code, json)
+            return json ?: JSONObject()
         }
     }
 

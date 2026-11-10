@@ -11,7 +11,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.Color
 import com.dshgo.app.ui.theme.softAccent
 import com.dshgo.app.data.displayName
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.rememberCoroutineScope
 import com.dshgo.app.data.ConnectionProbe
+import kotlinx.coroutines.launch
 import com.dshgo.app.data.Connection
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material.icons.rounded.Lock
@@ -154,6 +157,45 @@ fun SetupScreen(
     }
     var autoRoute by remember { mutableStateOf(prefs.getBoolean(PREF_AUTO, true)) }
 
+    // 外网地址的连通性结论。自动选路必须建立在「这条地址真的能用」之上 ——
+    // 否则出门在外会选到一条根本连不上的路，用户只看到「连不上」。
+    val scope = rememberCoroutineScope()
+    var tailOk by remember { mutableStateOf(false) }
+    var tailChecking by remember { mutableStateOf(false) }
+    var tailMsg by remember { mutableStateOf("") }
+
+    fun verifyTail(then: (Boolean) -> Unit) {
+        val raw = tailText.trim()
+        if (raw.isEmpty()) {
+            tailOk = false
+            tailChecking = false
+            tailMsg = ""
+            then(false)
+            return
+        }
+        tailChecking = true
+        tailMsg = "正在确认外网地址…"
+        scope.launch {
+            val st = runCatching { ConnectionProbe.probe(Prefs.normalize(raw)) }
+                .getOrNull()
+            tailChecking = false
+            val ok = st?.reachable == true
+            tailOk = ok
+            tailMsg = when {
+                st == null -> "外网地址连不上：探测失败"
+                ok && st.locked -> "外网地址可用 · 需要密码登录 · ${st.ms} ms"
+                ok -> "外网地址可用 · ${st.ms} ms"
+                else -> "外网地址连不上：${st.error.ifBlank { "检查手机流量下能否访问" }}"
+            }
+            if (!ok) {
+                // 连不上就不许开着自动选路 —— 否则出门必踩空
+                autoRoute = false
+                prefs.edit().putBoolean(PREF_AUTO, false).apply()
+            }
+            then(ok)
+        }
+    }
+
     Scaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
@@ -289,17 +331,32 @@ fun SetupScreen(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                if (tailText.isBlank()) "填了 Tailscale 地址才会自动切换"
-                                else "Wi-Fi 走局域网，移动网络走 Tailscale",
+                                // ★ 以前写的是「Wi-Fi 走局域网」，等于说别的 Wi-Fi 也走局域网。
+                                //   实际只有**同一个** Wi-Fi 才走局域网，换到别的 Wi-Fi 一样要出网。
+                                if (tailText.isBlank()) "填了可用的外网地址才会自动切换"
+                                else "只有同一个 Wi-Fi 走局域网，其它都走外网",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Switch(
                             checked = autoRoute,
-                            onCheckedChange = {
-                                autoRoute = it
-                                prefs.edit().putBoolean(PREF_AUTO, it).apply()
+                            enabled = !tailChecking,
+                            onCheckedChange = { want ->
+                                if (!want) {
+                                    autoRoute = false
+                                    prefs.edit().putBoolean(PREF_AUTO, false).apply()
+                                } else {
+                                    // 打开之前先验证外网地址；验不过就不开，并说明原因
+                                    verifyTail { ok ->
+                                        if (ok) {
+                                            autoRoute = true
+                                            prefs.edit().putBoolean(PREF_AUTO, true).apply()
+                                        } else if (tailText.isBlank()) {
+                                            tailMsg = "先填外网地址，才能自动选路"
+                                        }
+                                    }
+                                }
                             },
                         )
                     }
@@ -338,10 +395,20 @@ fun SetupScreen(
 
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "同 WiFi 用局域网地址最快；不在同一网络用 Tailscale 地址（100.x.x.x）。",
+                        "只有和电脑连同一个 Wi-Fi 才走局域网地址；换到别的 Wi-Fi 或移动网络" +
+                            "都走外网地址（100.x.x.x）。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
+                    if (tailMsg.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            tailMsg,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (tailOk) DshColor.Running else DshColor.Danger,
+                        )
+                    }
 
                     Spacer(Modifier.height(14.dp))
 
@@ -366,8 +433,20 @@ fun SetupScreen(
 
                     Button(
                         onClick = {
-                            val pick = if (autoRoute) autoPickUrl(context, text, tailText) else text
-                            if (pick.isNotBlank()) onConnect(pick)
+                            verifyTail { ok ->
+                                val lan = text.trim()
+                                // 外网验过且允许自动选路才可能选到外网；否则老老实实用局域网那条
+                                val pick = when {
+                                    !ok -> lan
+                                    autoRoute -> autoPickUrl(context, lan, tailText)
+                                    else -> lan
+                                }
+                                if (pick.isNotBlank()) {
+                                    onConnect(pick)
+                                } else {
+                                    tailMsg = "至少填一条地址"
+                                }
+                            }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1495,6 +1574,11 @@ fun DshStatusStrip(
                 }
             }
 
+            // ★ 把地址+通道标签留在左边，控件推到最右边。
+            //   以前这一行没有弹性空隙，铃铛/麦克风/刷新紧贴着地址文本，
+            //   看着像「这些按钮属于刚才那个网段」，而且离右手拇指很远。
+            Spacer(Modifier.weight(1f))
+
             // 铃铛 + 未读角标
             Box {
                 IconButton(onClick = onNotice) {
@@ -1949,7 +2033,8 @@ fun ConnectionsScreen(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var editing by remember { mutableStateOf<Connection?>(null) }
+    // 点齿轮管理的是**整台设备**（它可能有两三条地址），不是单条连接
+    var editingRows by remember { mutableStateOf<List<Connection>?>(null) }
     val topPad = rememberTopInset()
 
     // ★ 背景铺满整屏、内边距只作用于内容。
@@ -2048,7 +2133,7 @@ fun ConnectionsScreen(
                             activeId = activeId,
                             probing = probing,
                             onEnter = { onSwitch(it) },
-                            onEdit = { editing = it },
+                            onEdit = { editingRows = it },
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -2082,17 +2167,19 @@ fun ConnectionsScreen(
         }
     }
 
-    editing?.let { conn ->
-        EditConnectionDialog(
-            conn = conn,
-            onDismiss = { editing = null },
-            onSave = { name, url ->
-                onEdit(conn.copy(name = name, url = url))
-                editing = null
+    editingRows?.let { rows ->
+        DeviceDialog(
+            rows = rows,
+            statuses = statuses,
+            activeId = activeId,
+            onDismiss = { editingRows = null },
+            onSave = { updated ->
+                updated.forEach { onEdit(it) }
+                editingRows = null
             },
-            onDelete = {
-                onDelete(conn)
-                editing = null
+            onDeleteAll = {
+                rows.forEach { onDelete(it) }
+                editingRows = null
             },
         )
     }
@@ -2144,7 +2231,10 @@ private fun groupDevices(
 ): List<DeviceGroup> {
     val buckets = LinkedHashMap<String, MutableList<Connection>>()
     for (c in connections) {
+        // ★ 先看这次探测，再退回存储里的 deviceId。
+        //   出门在外时局域网那条探不到，靠存下来的 id 才能和 Tailscale 那条并成一台。
         val byId = statuses[c.url]?.deviceId?.takeIf { it.isNotBlank() }
+            ?: c.deviceId.takeIf { it.isNotBlank() }
         val key = if (byId != null) "d:$byId" else "u:${c.url}"
         buckets.getOrPut(key) { mutableListOf() }.add(c)
     }
@@ -2208,7 +2298,7 @@ private fun DeviceCard(
     activeId: String?,
     probing: Boolean,
     onEnter: (Connection) -> Unit,
-    onEdit: (Connection) -> Unit,
+    onEdit: (List<Connection>) -> Unit,
 ) {
     val anyActive = group.rows.any { it.id == activeId }
     Surface(
@@ -2247,7 +2337,7 @@ private fun DeviceCard(
                     )
                     Spacer(Modifier.width(4.dp))
                 }
-                IconButton(onClick = { onEdit(group.rows.first()) }, modifier = Modifier.size(34.dp)) {
+                IconButton(onClick = { onEdit(group.rows) }, modifier = Modifier.size(34.dp)) {
                     Icon(
                         painterResource(FnhIcons.Settings),
                         contentDescription = "编辑",
@@ -2345,42 +2435,126 @@ private fun ChannelRow(
 
 /** 改名 / 改地址 / 删除。 */
 @Composable
-private fun EditConnectionDialog(
-    conn: Connection,
+private fun DeviceDialog(
+    rows: List<Connection>,
+    statuses: Map<String, ConnectionProbe.Status>,
+    activeId: String?,
     onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit,
-    onDelete: () -> Unit,
+    onSave: (List<Connection>) -> Unit,
+    onDeleteAll: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(conn.name) }
-    var url by remember { mutableStateOf(conn.url) }
+    val first = rows.firstOrNull() ?: return
+    var name by remember { mutableStateOf(first.name) }
+    // 每条通道的地址都可改：换路由器、换端口不用删了重加。
+    val urls = remember(rows) {
+        mutableStateMapOf<String, String>().apply { rows.forEach { put(it.id, it.url) } }
+    }
     var confirmDelete by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("编辑连接", style = MaterialTheme.typography.titleMedium) },
-        text = {
+        title = {
             Column {
+                Text(
+                    first.displayName(),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "${rows.size} 条通道 · 同一台电脑",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                rows.forEach { row ->
+                    val st = statuses[row.url]
+                    val current = row.id == activeId
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (current) softAccent(0.10f)
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    channelLabel(row.url),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (channelLabel(row.url) == "Tailscale") DshColor.Accent
+                                    else MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                if (current) {
+                                    Text(
+                                        "当前使用",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = DshColor.Accent,
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    "${st?.ms ?: 0} ms",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = urls[row.id] ?: row.url,
+                                onValueChange = { urls[row.id] = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                label = { Text("地址") },
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                statusLine(st, false),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = statusColor(st),
+                            )
+                            val extra = buildString {
+                                if (!st?.version.isNullOrBlank()) append("插件 ${st?.version}")
+                                if (st?.needsPassword == true) {
+                                    if (isNotEmpty()) append(" · ")
+                                    append("需要密码")
+                                }
+                                if (st?.upstreamReachable == false) {
+                                    if (isNotEmpty()) append(" · ")
+                                    append("dsh web 没起来")
+                                }
+                            }
+                            if (extra.isNotEmpty()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    extra,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("名字（可留空）") },
-                    placeholder = { Text(conn.url.removePrefix("http://")) },
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    label = { Text("设备名（可留空）") },
+                    placeholder = { Text("例如：书房的台式机") },
                     shape = RoundedCornerShape(12.dp),
                 )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = { url = it },
-                    label = { Text("地址") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    shape = RoundedCornerShape(12.dp),
-                )
+
                 if (confirmDelete) {
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "再点一次「删除」确认。",
+                        "再点一次「删除设备」确认：这台电脑的 ${rows.size} 条地址会一起删掉。",
                         style = MaterialTheme.typography.labelSmall,
                         color = DshColor.Danger,
                     )
@@ -2389,18 +2563,26 @@ private fun EditConnectionDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name.trim(), url.trim()) },
-                enabled = url.trim().isNotEmpty(),
+                onClick = {
+                    onSave(
+                        rows.map { row ->
+                            row.copy(
+                                name = name.trim(),
+                                url = Prefs.normalize(urls[row.id] ?: row.url),
+                            )
+                        },
+                    )
+                },
+                enabled = rows.all { !urls[it.id].isNullOrBlank() },
             ) {
                 Text("保存")
             }
         },
         dismissButton = {
-            // 两段式：第一次点变成「确认删除」，第二次才真删。
-            // 原来两个分支都写「删除」，等于没有确认这一步。
-            TextButton(onClick = { if (confirmDelete) onDelete() else confirmDelete = true }) {
+            // 两段式确认：一次点在折叠屏上很容易误触
+            TextButton(onClick = { if (confirmDelete) onDeleteAll() else confirmDelete = true }) {
                 Text(
-                    if (confirmDelete) "确认删除" else "删除",
+                    if (confirmDelete) "确认删除" else "删除设备",
                     color = DshColor.Danger,
                 )
             }

@@ -138,12 +138,19 @@ private fun TunnelScreen(
     var state by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var loginUrl by remember { mutableStateOf("") }
+    // 隧道是否真的存在。和引擎状态分开：两者会各自死掉（见 TsTunnel.tunUp）
+    var tunUp by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
             state = runCatching { Tunnel.get(ctx).backendState() }.getOrDefault("")
             address = TsTunnel.selfAddress(ctx)
-            loginUrl = TsTunnel.loginUrl(ctx).let { if (it == "null") "" else it }
+            loginUrl = TsTunnel.loginUrl(ctx)
+            // 用户已经点过「启用」但隧道不在 → 顺手让它自愈一次
+            if (TsTunnel.wantsTunnel(ctx) && !TsTunnel.tunUp()) {
+                runCatching { TsTunnel.ensureTunnel(ctx) }
+            }
+            tunUp = TsTunnel.tunUp()
             delay(1200)
         }
     }
@@ -180,6 +187,13 @@ private fun TunnelScreen(
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     Text("引擎状态：${state.ifBlank { "未知" }}", fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
+                    // ★ 以前只显示引擎状态，于是「后端 Running、隧道早没了」时界面照样说
+                    //   「已连接」—— 用户拿着手机怎么都连不上。两件事必须分开显示。
+                    Text(
+                        if (tunUp) "隧道：已建立" else "隧道：未建立",
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
                     Text("本机地址：${address.ifBlank { "尚未分配" }}", fontSize = 12.sp)
                     if (loginUrl.isNotBlank()) {
                         Spacer(Modifier.height(4.dp))
@@ -190,16 +204,18 @@ private fun TunnelScreen(
 
             // 按当前状态决定哪个按钮可用：已经 Running 还点「启用」只会在原地转圈，
             // 没起来时点「停用」也一样 —— 干脆禁用，一屏之内说清能做什么。
-            val running = state == "Running"
+            // 能不能点看的是**隧道**，不是后端：后端 Running 但 TUN 没了的时候，
+            // 「启用隧道」恰恰是用户唯一该点的按钮（点了就会重建）。
+            val up = tunUp
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = onStart,
-                    enabled = !running,
+                    enabled = !up,
                     modifier = Modifier.weight(1f),
-                ) { Text(if (running) "隧道已启用" else "启用隧道") }
+                ) { Text(if (up) "隧道已启用" else "启用隧道") }
                 OutlinedButton(
                     onClick = onStop,
-                    enabled = running || state.isNotBlank(),
+                    enabled = up || state.isNotBlank(),
                     modifier = Modifier.weight(1f),
                 ) { Text("停用") }
             }

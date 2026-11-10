@@ -1457,6 +1457,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val statuses = runCatching { ConnectionProbe.probeAll(list) }.getOrDefault(emptyMap())
             // 电脑换了 Wi-Fi / 路由器换了网段 → 局域网地址会变。
             // 原地改地址，而不是让列表里多出一台「新设备」。
+            // 记住这次探到的设备身份：出门时局域网那条探不到，靠它才能和 Tailscale
+            // 那条并成同一台电脑（否则列表里永远是两台）。
+            val learned = runCatching { ConnectionStore.rememberDeviceIds(this@MainActivity, statuses) }
+                .getOrDefault(0)
             val moved = runCatching { ConnectionStore.reconcileDevices(this@MainActivity, statuses) }
                 .getOrDefault(0)
             if (moved > 0) {
@@ -1470,7 +1474,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             ui = ui.copy(
                 connStatuses = statuses,
                 probing = false,
-                connections = if (moved > 0) ConnectionStore.all(this@MainActivity) else ui.connections,
+                connections = if (moved > 0 || learned > 0) ConnectionStore.all(this@MainActivity)
+                else ui.connections,
             )
         }
     }
@@ -1969,7 +1974,15 @@ private fun Shell(
     onOpenNotice: (String) -> Unit,
     onDismissCrash: () -> Unit,
 ) {
-    BackHandler { onBack() }
+    // ★ 返回键按「来的路」退：从设备列表进的添加页、从会话进的设备列表，
+    //   都只退一级。以前一律走 onBack()，于是「添加设备」界面按返回直接退出 App。
+    BackHandler {
+        when (state.screen) {
+            Screen.Setup -> if (state.dshReady) onCancelSetup() else onBack()
+            Screen.Connections -> if (state.dshReady) onBackToDsh() else onBack()
+            else -> onBack()
+        }
+    }
 
     val streamLiveState by SessionWatcher.live.collectAsStateWithLifecycle()
     val streamErrorState by SessionWatcher.lastError.collectAsStateWithLifecycle()

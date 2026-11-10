@@ -6,10 +6,14 @@ import android.content.Intent
 import android.os.IBinder
 import com.dshgo.app.notify.NotificationCenter
 import com.dshgo.app.notify.SessionWatcher
+import com.dshgo.app.tunnel.TsTunnel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * 保活用的前台服务。
@@ -61,6 +65,16 @@ class WatchService : Service() {
         val url = prefs.entryUrl()
         if (url.isNotEmpty()) {
             SessionWatcher.start(this, url)
+        }
+
+        // 隧道看门狗：VpnService 会因为切网络、省电、系统回收而单独死掉，
+        // 而后端引擎还活着 —— 表现就是界面说「已连接」、地址却一个也连不上。
+        // 这个进程本来就是常驻的，借它每 15 秒体检一次，缺了就重建。
+        scope.launch {
+            while (isActive) {
+                delay(15_000)
+                runCatching { TsTunnel.ensureTunnel(this@WatchService) }
+            }
         }
     }
 
