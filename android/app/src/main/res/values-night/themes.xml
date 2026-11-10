@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  深色下的窗口主题。
+
+  为什么需要单独一份：values/themes.xml 继承的是 Theme.Material.Light，
+  它的默认文字色、弹窗底色都按浅色来。深色下只把 windowBackground 换成深色还不够 ——
+  状态栏/导航栏的图标仍然按「浅色背景」画成深色，落在深色底上看不见。
+
+  Compose 侧（DshTheme 里的 WindowCompat）随后会再按主题设一次，这里给的是
+  从进程启动到第一帧 Compose 之间那段时间的初值。
+-->
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/app_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

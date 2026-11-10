@@ -7,7 +7,9 @@
       这里只给一个浅色 UI 的初值，避免启动瞬间闪白图标。
     -->
     <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/white</item>
+        <!-- 窗口底色走 @color/app_bg（values-night 里有深色值），
+             否则冷启动、生物识别、换路空档都是一屏白。 -->
+        <item name="android:windowBackground">@color/app_bg</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

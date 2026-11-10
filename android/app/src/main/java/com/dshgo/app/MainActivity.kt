@@ -180,6 +180,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     /** DSH 页面是否已经成功载入过一次（决定能不能往页面里注入 JS）。 */
     private var loaded = false
 
+    /**
+     * 换路后「自动补一次刷新」的开关。
+     *
+     * 手机切换网络的那一刻，WebView 手里那条连接已经废了。多数情况下新导航能正常起来
+     * （onPageCommitVisible 会把开关关掉），但偶尔首帧就是不来 —— 用户看到的就是
+     * 「换路了、画面不出来、手动点一下刷新才有」。与其让用户去点，不如到点自己重载一次。
+     * 只重载一次，避免在真的连不上时变成死循环刷屏。
+     */
+    private var switchAutoReloadArmed = false
+
     private val handler = Handler(Looper.getMainLooper())
     private var loadTimeout: Runnable? = null
 
@@ -193,6 +203,24 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             .cookieJar(WebViewCookies)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * 抓主文档专用的客户端：超时必须短。
+     *
+     * [shouldInterceptRequest] 是**同步**回调，它阻塞的是 WebView 自己的请求线程 ——
+     * 这里多等一秒，用户就多一秒空白页。默认那 10 s 连接 / 20 s 读取是按「下载文件」定的，
+     * 用在主文档上只有一个后果：换路后旧网络那条 socket 还没断，请求挂到超时才回来，
+     * 页面就是一片空，用户以为没加载，手动刷新一次（新连接）才出画面。
+     *
+     * 3 s / 6 s 拿不到就当拦截失败，交回 WebView 自己发请求 —— 它会同样快地失败或成功，
+     * 但至少不会卡在拦截层。
+     */
+    private val docClient: OkHttpClient by lazy {
+        httpClient.newBuilder()
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(6, TimeUnit.SECONDS)
             .build()
     }
 
@@ -474,9 +502,25 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     prefs.rememberUrl(target)
                     val targetConn = ConnectionStore.all(this).firstOrNull { it.url == target }
                     if (targetConn != null) ConnectionStore.setActive(this, targetConn.id)
-                    ui = ui.copy(entryUrl = target, activeConnId = targetConn?.id ?: ui.activeConnId)
+                    // ★ 同时把 dshReady 打回 false：换路是一次真正的导航，新页面首帧之前
+                    //   屏幕上是空的。不打回 false 就不会出加载遮罩，深色下会看到一片空白
+                    //   （浅色主题里更刺眼：整块白）。遮罩底色是主题背景色，两种模式都对。
+                    ui = ui.copy(
+                        entryUrl = target,
+                        activeConnId = targetConn?.id ?: ui.activeConnId,
+                        dshReady = false,
+                    )
                     ensureThemeCookie(target)
+                    // ★ 换网络后连接池里那些 socket 还绑在旧网络上。不清掉的话，
+                    //   主文档拦截会先尝试复用它们，一直挂到 readTimeout 才失败 ——
+                    //   表现就是「换路了但画面不出来，手动刷新一次才有」。
+                    webView.stopLoading()
+                    httpClient.dispatcher.cancelAll()
+                    httpClient.connectionPool.evictAll()
+                    docClient.dispatcher.cancelAll()
+                    docClient.connectionPool.evictAll()
                     webView.loadUrl(target, themeHeaders())
+                    armAutoReloadAfterSwitch()
                     // ★ 换路必须说一声。以前地址悄悄换掉：会话重连、滚动位置丢了，
                     // 用户只看到页面一抖，以为是网络出问题。
                     val from = channelOf(current).ifEmpty { "当前" }
@@ -688,6 +732,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 // 首帧已经画出来了就撤遮罩，不必等子资源全部结束。
                 // 移动网络下 onPageFinished 常常比首帧晚 2–5 秒，那几秒里用户看到的
                 // 只是转圈，而页面其实早就能点了。
+                switchAutoReloadArmed = false
                 if (ui.screen == Screen.Dsh && ui.pageError == null && !ui.dshReady) {
                     ui = ui.copy(dshReady = true)
                 }
@@ -1703,13 +1748,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             .header("Accept", "text/html,application/xhtml+xml")
             .build()
 
-        httpClient.newCall(request).execute().use { resp ->
+        // docClient：短超时。这个函数在 WebView 的请求线程上同步跑，
+        // 用默认 10 s/20 s 会让换路后的空白页持续到超时（见 docClient 注释）。
+        docClient.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) return null
             val contentType = resp.header("Content-Type") ?: return null
             if (!contentType.contains("text/html", ignoreCase = true)) return null
 
-            val html = resp.body?.string() ?: return null
-            // 上游代理补过就不重复补，避免页面里出现两份 polyfill
+            val html = resp.body?.string() ?: return null            // 上游代理补过就不重复补，避免页面里出现两份 polyfill
             val script = PageInject.script(
                 layout = prefs.layout(),
                 needPolyfill = !PageInject.proxyAlreadyPolyfilled(html),
@@ -1753,6 +1799,25 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     // ------------------------------------------------------------------
     // 返回
     // ------------------------------------------------------------------
+
+    /**
+     * 换路后 8 秒还没等到首帧，就自己重载一次。
+     *
+     * 只在换路时调用；[WebViewClient.onPageCommitVisible] 一触发就把开关关掉，
+     * 所以正常换路不会有任何多余动作。
+     */
+    private fun armAutoReloadAfterSwitch() {
+        switchAutoReloadArmed = true
+        val token = webView
+        token.postDelayed({
+            if (!switchAutoReloadArmed) return@postDelayed
+            switchAutoReloadArmed = false
+            if (ui.screen != Screen.Dsh || ui.dshReady) return@postDelayed
+            // 首帧没来：换路那次导航废了，补一次。记一条事件方便用户截图反馈时对账。
+            EventLog.event(this, "route", "no first frame after switch; auto reload")
+            token.reload()
+        }, 8_000L)
+    }
 
     private fun handleBack() {
         when {

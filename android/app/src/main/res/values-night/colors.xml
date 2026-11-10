@@ -29,4 +29,7 @@
     <!-- 深色下降低不透明度，避免整行发亮；文字色提亮保证对比度 -->
     <color name="wg_alert_bg">#26F97316</color>
     <color name="wg_alert_text">#FFFDBA74</color>
+
+    <!-- 窗口底色：深色下与 DshColor.SurfaceDark 对齐，冷启动/锁页/换路空档不再闪白 -->
+    <color name="app_bg">#FF0B0E14</color>
 </resources>

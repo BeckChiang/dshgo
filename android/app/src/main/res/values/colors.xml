@@ -45,4 +45,13 @@
     <!-- 等审批行的浅橙底与文字色：只在这一类行上用，不参与主题切换以外的任何语义 -->
     <color name="wg_alert_bg">#1AF97316</color>
     <color name="wg_alert_text">#FFC2410C</color>
+
+    <!--
+      窗口底色（AppCompat 之外的 framework 主题用）。
+
+      它是「页面还没画出来」时唯一看得见的东西：冷启动首帧、生物识别弹窗盖上来那一瞬、
+      切换通道重新 loadUrl 的空档。以前写死 @android:color/white，深色下就闪一屏白。
+      浅色值与 DshColor 的 SurfaceLight 对齐，深色值在 values-night/colors.xml。
+    -->
+    <color name="app_bg">#FFF4F6F9</color>
 </resources>
