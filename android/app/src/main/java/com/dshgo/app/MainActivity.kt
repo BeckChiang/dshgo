@@ -94,6 +94,7 @@ import com.dshgo.app.ui.DshStatusStrip
 import com.dshgo.app.ui.Screen
 import com.dshgo.app.ui.SettingsSheet
 import com.dshgo.app.ui.SetupScreen
+import com.dshgo.app.data.EventLog
 import com.dshgo.app.ui.StripHeight
 import com.dshgo.app.ui.theme.DshTheme
 
@@ -467,6 +468,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 val target = AutoRoute.pick(this, ConnectionStore.all(this), current)
                 if (target != null && target != current) {
                     webView.loadUrl(target, themeHeaders())
+                    // ★ 换路必须说一声。以前地址悄悄换掉：会话重连、滚动位置丢了，
+                    // 用户只看到页面一抖，以为是网络出问题。
+                    val from = channelOf(current).ifEmpty { "当前" }
+                    val to = channelOf(target).ifEmpty { "另一条通道" }
+                    Toast.makeText(
+                        this@MainActivity,
+                        "网络变了，已从$from 切到$to：${hostOf(target)}",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    EventLog.event(this@MainActivity, "route", "switch $from -> $to ${hostOf(target)}")
                 } else {
                     reloadKeepingPosition()
                 }
@@ -1444,7 +1455,23 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         ui = ui.copy(probing = true)
         lifecycleScope.launch {
             val statuses = runCatching { ConnectionProbe.probeAll(list) }.getOrDefault(emptyMap())
-            ui = ui.copy(connStatuses = statuses, probing = false)
+            // 电脑换了 Wi-Fi / 路由器换了网段 → 局域网地址会变。
+            // 原地改地址，而不是让列表里多出一台「新设备」。
+            val moved = runCatching { ConnectionStore.reconcileDevices(this@MainActivity, statuses) }
+                .getOrDefault(0)
+            if (moved > 0) {
+                EventLog.event(this@MainActivity, "conn", "address moved x$moved")
+                Toast.makeText(
+                    this@MainActivity,
+                    "有 $moved 条连接地址变了，已自动更新",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            ui = ui.copy(
+                connStatuses = statuses,
+                probing = false,
+                connections = if (moved > 0) ConnectionStore.all(this@MainActivity) else ui.connections,
+            )
         }
     }
 
@@ -1999,6 +2026,7 @@ private fun Shell(
                 onEdit = onSaveConn,
                 onDelete = onDeleteConn,
                 onBack = onBackToDsh,
+                onOpenSettings = onOpenSettings,
                 // 顶部的系统 inset 由页面自己算（它能判断窗口有没有贴着屏幕顶，
                 // 分屏时不该再补一份，见 rememberTopInset）
                 modifier = Modifier,
@@ -2041,6 +2069,7 @@ private fun Shell(
         if (showStrip) {
             DshStatusStrip(
                 host = hostOf(state.entryUrl),
+                channel = channelOf(state.entryUrl),
                 live = live,
                 unseen = unseen,
                 onNotice = onOpenPanel,
@@ -2122,3 +2151,11 @@ private fun Shell(
 
 private fun hostOf(url: String): String =
     runCatching { java.net.URI(url).host ?: url }.getOrDefault(url)
+
+/** 这条地址走的是哪条通道：局域网 / Tailscale / 其它（自建域名等）。 */
+private fun channelOf(url: String): String = when {
+    url.isBlank() -> ""
+    com.dshgo.app.data.AutoRoute.isTailscaleUrl(url) -> "Tailscale"
+    com.dshgo.app.data.AutoRoute.isLanUrl(url) -> "局域网"
+    else -> ""
+}

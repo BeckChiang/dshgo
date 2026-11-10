@@ -115,6 +115,40 @@ object ConnectionStore {
     }
 
     /**
+     * 电脑换了网络（局域网 IP 变了）时，**原地更新地址**，不新增一台设备。
+     *
+     * 判据是插件自报的 `addrs`：同一个 deviceId 现在报的局域网地址变了，
+     * 就把那条连接指向新地址。找不到对应通道（比如换了 Wi-Fi 但另一条是 Tailscale）
+     * 就不动 —— 宁可让用户手动改，也不要把一条能用的连接改坏。
+     *
+     * 返回更新了几条，调用方据此提示一句。
+     */
+    fun reconcileDevices(ctx: Context, statuses: Map<String, ConnectionProbe.Status>): Int {
+        val list = all(ctx).toMutableList()
+        val taken = list.map { it.url }.toHashSet()
+        var changed = 0
+        for (i in list.indices) {
+            val conn = list[i]
+            val st = statuses[conn.url] ?: continue
+            if (st.deviceId.isBlank()) continue
+            val host = runCatching { java.net.URI(conn.url).host.orEmpty() }.getOrDefault("")
+            val isTail = host.startsWith("100.")
+            val reported = (if (isTail) st.tailUrls else st.lanUrls)
+                .firstOrNull { it.startsWith("http") } ?: continue
+            val normalized = reported.trimEnd('/')
+            if (normalized == conn.url) continue
+            // 新地址已经属于另一条连接：那是「换过来」而不是「原地漂移」，别合并错了
+            if (normalized in taken) continue
+            taken.remove(conn.url)
+            taken.add(normalized)
+            list[i] = conn.copy(url = normalized)
+            changed++
+        }
+        if (changed > 0) persist(ctx, list)
+        return changed
+    }
+
+    /**
      * 记下「用过这条」。同时把它设成当前连接。
      *
      * lastUsedAt 是用来排序的 —— 最近连过的排前面，列表顺序才符合直觉。

@@ -19,6 +19,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -36,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dsh.remote.Tunnel
+import com.dshgo.app.ui.theme.DshTheme
 import com.dshgo.app.data.CrashCenter
 import com.dshgo.app.data.EventLog
 import com.dshgo.app.tunnel.TsTunnel
@@ -67,7 +71,9 @@ class TunnelLoginActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         EventLog.event(this, "ui.tunnel", "open")
         setContent {
-            MaterialTheme {
+            // ★ 必须用 App 自己的主题。以前这里挂的是 M3 裸 `MaterialTheme`，
+            //   于是这个二级页是 Material 默认的紫，而外面全是 DSH 蓝 —— 一点进去就「跳品牌」。
+            DshTheme {
                 TunnelScreen(
                     onStart = { startTunnel() },
                     onStop = { TsTunnel.stop(this); EventLog.event(this, "tunnel.stop", "user") },
@@ -137,7 +143,7 @@ private fun TunnelScreen(
         while (true) {
             state = runCatching { Tunnel.get(ctx).backendState() }.getOrDefault("")
             address = TsTunnel.selfAddress(ctx)
-            loginUrl = TsTunnel.loginUrl(ctx)
+            loginUrl = TsTunnel.loginUrl(ctx).let { if (it == "null") "" else it }
             delay(1200)
         }
     }
@@ -152,7 +158,17 @@ private fun TunnelScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Tailscale", style = MaterialTheme.typography.headlineSmall)
+            // 自带返回：这个页面是从设置里点进来的二级页，没有自己的导航栏，
+            // 系统返回手势在折叠屏上不总是好使。
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                IconButton(onClick = { (ctx as? android.app.Activity)?.finish() }) {
+                    Icon(
+                        painterResource(FnhIcons.Back),
+                        contentDescription = "返回",
+                    )
+                }
+                Text("Tailscale", style = MaterialTheme.typography.headlineSmall)
+            }
             Text(
                 "隧道只把本应用放进去，手机其它 App 不走它。",
                 style = MaterialTheme.typography.bodySmall,
@@ -172,9 +188,20 @@ private fun TunnelScreen(
                 }
             }
 
+            // 按当前状态决定哪个按钮可用：已经 Running 还点「启用」只会在原地转圈，
+            // 没起来时点「停用」也一样 —— 干脆禁用，一屏之内说清能做什么。
+            val running = state == "Running"
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onStart, modifier = Modifier.weight(1f)) { Text("启用隧道") }
-                OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) { Text("停用") }
+                Button(
+                    onClick = onStart,
+                    enabled = !running,
+                    modifier = Modifier.weight(1f),
+                ) { Text(if (running) "隧道已启用" else "启用隧道") }
+                OutlinedButton(
+                    onClick = onStop,
+                    enabled = running || state.isNotBlank(),
+                    modifier = Modifier.weight(1f),
+                ) { Text("停用") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onLogin, modifier = Modifier.weight(1f)) { Text("登录 Tailscale") }

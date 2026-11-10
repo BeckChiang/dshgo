@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
@@ -111,6 +112,8 @@ val StripHeight = 44.dp
 @Composable
 fun SetupScreen(
     initialUrl: String,
+    /** 上次填过的 Tailscale 地址；「更改」进来时用它预填第二条，而不是把生效地址塞进局域网框。 */
+    initialTail: String = "",
     error: String?,
     connecting: Boolean,
     onConnect: (String) -> Unit,
@@ -120,14 +123,35 @@ fun SetupScreen(
     /** 非空时在左上角显示返回箭头 —— 从会话里点「更改地址」进来才给退路。 */
     onCancel: (() -> Unit)? = null,
 ) {
-    var text by remember { mutableStateOf(initialUrl) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     // 两条地址分开存：家里用局域网那句，出门用 Tailscale 那句，回来不用重填。
     val prefs = remember {
         context.getSharedPreferences("dshgo_connect", Context.MODE_PRIVATE)
     }
-    var tailText by remember { mutableStateOf(prefs.getString(PREF_TAIL, "") ?: "") }
+
+    // ★ 按角色预填，而不是把「当前生效的那条」塞进第一个框。
+    //
+    // 以前不管生效的是哪条，都直接进 initialUrl —— 用的是 Tailscale（100.x）时，
+    // 第二个框「局域网地址」里显示的就是 100.75.57.100，
+    // 用户看到的是「局域网地址错了」，其实错在这里。
+    val startIsTail = initialUrl.isNotEmpty() && runCatching {
+        java.net.URI(initialUrl).host.orEmpty().startsWith("100.")
+    }.getOrDefault(false)
+    var text by remember {
+        mutableStateOf(
+            if (startIsTail) prefs.getString(PREF_LAN, "") ?: "" else initialUrl,
+        )
+    }
+    var tailText by remember {
+        mutableStateOf(
+            when {
+                startIsTail -> initialUrl
+                initialTail.isNotBlank() -> initialTail
+                else -> prefs.getString(PREF_TAIL, "") ?: ""
+            },
+        )
+    }
     var autoRoute by remember { mutableStateOf(prefs.getBoolean(PREF_AUTO, true)) }
 
     Scaffold(
@@ -198,7 +222,10 @@ fun SetupScreen(
 
                     OutlinedTextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = {
+                            text = it
+                            prefs.edit().putString(PREF_LAN, it.trim()).apply()
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         label = { Text("局域网地址") },
@@ -279,7 +306,8 @@ fun SetupScreen(
 
                     Spacer(Modifier.height(6.dp))
 
-                    // Tailscale 登录/状态就在连接页给位置：不用先进 DSH 再翻设置。
+                    // Tailscale 这里**只显示状态**，登录/开关隧道都去同一个管理页 ——
+                    // 以前连接页给「登录」、设置里又给四个按钮，等于两套入口。
                     val tsState = remember { TsTunnel.state(context) }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -292,13 +320,19 @@ fun SetupScreen(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                if (tsState.isBlank()) "未启动" else tsState,
+                                tsStateText(tsState),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        TextButton(onClick = { TsTunnel.startLogin(context) }) {
-                            Text("登录", style = MaterialTheme.typography.labelLarge)
+                        TextButton(onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent(context, TunnelLoginActivity::class.java),
+                                )
+                            }
+                        }) {
+                            Text("管理", style = MaterialTheme.typography.labelLarge)
                         }
                     }
 
@@ -946,20 +980,6 @@ fun SettingsSheet(
 
             TsTunnelSection()
 
-            Spacer(Modifier.height(10.dp))
-            val tunnelCtx = androidx.compose.ui.platform.LocalContext.current
-            OutlinedActionButton(
-                label = "Tailscale 登录与隧道",
-                tint = MaterialTheme.colorScheme.primary,
-                onClick = {
-                    runCatching {
-                        tunnelCtx.startActivity(
-                            android.content.Intent(tunnelCtx, TunnelLoginActivity::class.java),
-                        )
-                    }
-                },
-            )
-
             Spacer(Modifier.height(18.dp))
             DiagnosticsSection()
 
@@ -1401,6 +1421,8 @@ fun DshLoadingOverlay(
 @Composable
 fun DshStatusStrip(
     host: String,
+    /** 当前这条链路的性质：「局域网」/「Tailscale」——换网时一眼能看出换过去没有。 */
+    channel: String = "",
     live: Boolean,
     unseen: Int,
     onNotice: () -> Unit,
@@ -1446,13 +1468,32 @@ fun DshStatusStrip(
             Spacer(Modifier.width(9.dp))
             Text(
                 host.ifEmpty { "DSH" },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f, fill = false),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.5.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (channel.isNotEmpty()) {
+                Spacer(Modifier.width(6.dp))
+                // 通道标签：Wi-Fi ↔ 蜂窝切换后地址会换，这里跟着变，
+                // 不用再点进设置猜「现在走的是哪条」。
+                Surface(
+                    shape = RoundedCornerShape(5.dp),
+                    color = if (channel == "Tailscale") softAccent(0.18f)
+                    else MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Text(
+                        channel,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                        color = if (channel == "Tailscale") DshColor.Accent
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
+                }
+            }
 
             // 铃铛 + 未读角标
             Box {
@@ -1905,16 +1946,27 @@ fun ConnectionsScreen(
     onDelete: (Connection) -> Unit,
     onAdd: () -> Unit,
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var editing by remember { mutableStateOf<Connection?>(null) }
     val topPad = rememberTopInset()
 
+    // ★ 背景铺满整屏、内边距只作用于内容。
+    //
+    // 以前把 inset 写在 Surface 的 modifier 上，等于把自己整体往下挪 ——
+    // 状态栏那一条露出来的是**后面**的东西（黑底或上一屏），
+    // 于是「通知栏透明、和内容重合」。
     Surface(
-        modifier = modifier.fillMaxSize().padding(top = topPad),
+        modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(top = topPad)
+                .navigationBarsPadding(),
+        ) {
 
             // ── 品牌头 ────────────────────────────────────────────────
             Row(
@@ -1945,6 +1997,17 @@ fun ConnectionsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                // 设备页也给设置入口：以前要先随便进一台设备才能改设置，
+                // 换机器/换密码的时候就得多点好几层。
+                IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        painterResource(FnhIcons.Settings),
+                        contentDescription = "设置",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+                Spacer(Modifier.width(2.dp))
                 Surface(
                     onClick = onAdd,
                     shape = CircleShape,
@@ -1973,14 +2036,19 @@ fun ConnectionsScreen(
                 if (connections.isEmpty()) {
                     EmptyConnections()
                 } else {
-                    connections.forEach { conn ->
-                        ConnectionCard(
-                            conn = conn,
-                            status = statuses[conn.url],
-                            active = conn.id == activeId,
-                            probing = probing && statuses[conn.url] == null,
-                            onEnter = { onSwitch(conn) },
-                            onEdit = { editing = conn },
+                    // ★ 一台电脑一张卡。
+                    //
+                    // 同一个 DSH 常常有两条地址（家里局域网、出门 Tailscale）。
+                    // 以前它们就是两张卡，看起来像两台机器，还各探各的。
+                    // 插件现在报 deviceId，这里按它归并；探不到 id 的老插件退回按地址各算一张。
+                    groupDevices(connections, statuses).forEach { group ->
+                        DeviceCard(
+                            group = group,
+                            statuses = statuses,
+                            activeId = activeId,
+                            probing = probing,
+                            onEnter = { onSwitch(it) },
+                            onEdit = { editing = it },
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -2056,130 +2124,221 @@ private fun EmptyConnections() {
     }
 }
 
+/** 一台电脑：可能有多条通道（家里局域网 / 出门 Tailscale）。 */
+private data class DeviceGroup(
+    val key: String,
+    val name: String,
+    /** 该设备的各条地址，局域网排前面。 */
+    val rows: List<Connection>,
+)
+
 /**
- * 一张连接卡片。
+ * 把「地址」归并成「设备」。
  *
- * ## 当前那条怎么强调
- *
- * **用边框，不用填充。** 一开始填充了浅色底，深色主题下白字涂上去直接隐形 ——
- * 同一个坑设置里的「连接」卡片也踩过。边框 + 淡底（带透明度，不是写死的浅色）
- * 在明暗两套主题下都稳。
+ * 判据是插件自报的 `deviceId`（主机名+用户名+平台派生，稳定）。探不到就退回一条地址一张卡 ——
+ * 老版本插件没有这个字段，不能因为升级 App 就把人家的连接拆没了。
  */
-@Composable
-private fun ConnectionCard(
-    conn: Connection,
-    status: ConnectionProbe.Status?,
-    active: Boolean,
-    probing: Boolean,
-    onEnter: () -> Unit,
-    onEdit: () -> Unit,
-) {
-    val online = status?.online == true && status.listening
-    val dot = when {
-        status == null -> MaterialTheme.colorScheme.onSurfaceVariant
-        !status.online -> DshColor.Danger
-        !status.listening -> DshColor.Warning
-        else -> DshColor.Running
+private fun groupDevices(
+    connections: List<Connection>,
+    statuses: Map<String, ConnectionProbe.Status>,
+): List<DeviceGroup> {
+    val buckets = LinkedHashMap<String, MutableList<Connection>>()
+    for (c in connections) {
+        val byId = statuses[c.url]?.deviceId?.takeIf { it.isNotBlank() }
+        val key = if (byId != null) "d:$byId" else "u:${c.url}"
+        buckets.getOrPut(key) { mutableListOf() }.add(c)
+    }
+    return buckets.map { (key, rows) ->
+        val name = rows.firstNotNullOfOrNull { statuses[it.url]?.deviceName?.takeIf(String::isNotBlank) }
+            ?: rows.first().displayName().substringBefore(" ·")
+        DeviceGroup(key, name, rows.sortedBy { channelRank(it.url) })
+    }
+}
+
+/** 局域网先、Tailscale 后：同 Wi-Fi 下先看到的应该是能直连的那条。 */
+private fun channelRank(url: String): Int = if (channelLabel(url) == "Tailscale") 1 else 0
+
+private fun channelLabel(url: String): String {
+    val host = runCatching { java.net.URI(url).host.orEmpty() }.getOrDefault("")
+    return when {
+        host.startsWith("100.") -> "Tailscale"
+        host.startsWith("192.168.") || host.startsWith("10.") -> "局域网"
+        host.matches(Regex("172\\.(1[6-9]|2\\d|3[01])\\..*")) -> "局域网"
+        else -> "其它"
+    }
+}
+
+/** 状态一句话 —— 列表里的每条通道共用这一份，不再各写一遍。 */
+private fun statusLine(status: ConnectionProbe.Status?, probing: Boolean): String = when {
+    probing -> "检查中…"
+    status == null -> "未检查"
+    else -> when (status.level) {
+        // TCP 都没通
+        ConnectionProbe.Level.Offline -> status.error.ifEmpty { "连不上" }
+        // 通了但被闸门挡住：可以连，只是要输访问密码
+        ConnectionProbe.Level.Locked -> "可以连接 · 需要密码登录"
+        // 插件在应答，但它背后的 dsh web 没起来：该去电脑上开 DSH，不是重装 dshgo
+        ConnectionProbe.Level.NoUpstream -> "电脑上的 dsh web 没在运行"
+        // 应答来自 DSH 本体，转发层没就绪（插件刚重启时会短暂出现）
+        ConnectionProbe.Level.NoProxy -> "转发层还没就绪 —— 电脑上的 dshgo 没在监听"
+        ConnectionProbe.Level.Online -> buildString {
+            append(status.ms).append(" ms")
+            if (status.version.isNotEmpty()) append(" · v").append(status.version)
+            if (status.needsPassword) append(" · 需要解锁")
+            if (status.updateAvailable) append(" · 插件有新版")
+        }
+    }
+}
+
+private fun statusColor(status: ConnectionProbe.Status?): androidx.compose.ui.graphics.Color =
+    when (status?.level) {
+        ConnectionProbe.Level.Offline -> DshColor.Danger
+        ConnectionProbe.Level.Locked,
+        ConnectionProbe.Level.NoUpstream,
+        ConnectionProbe.Level.NoProxy,
+        -> DshColor.Warning
+        ConnectionProbe.Level.Online -> DshColor.Running
+        null -> DshColor.TextFaintLight
     }
 
+@Composable
+private fun DeviceCard(
+    group: DeviceGroup,
+    statuses: Map<String, ConnectionProbe.Status>,
+    activeId: String?,
+    probing: Boolean,
+    onEnter: (Connection) -> Unit,
+    onEdit: (Connection) -> Unit,
+) {
+    val anyActive = group.rows.any { it.id == activeId }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        onClick = onEnter,
         shape = RoundedCornerShape(18.dp),
-        color = if (active) softAccent(0.10f) else MaterialTheme.colorScheme.surfaceVariant,
+        color = if (anyActive) softAccent(0.10f) else MaterialTheme.colorScheme.surfaceVariant,
         border = androidx.compose.foundation.BorderStroke(
-            width = if (active) 1.5.dp else 1.dp,
-            color = if (active) DshColor.Accent.copy(alpha = 0.55f) else DshColor.OutlineDark.copy(alpha = 0.35f),
+            width = if (anyActive) 1.5.dp else 1.dp,
+            color = if (anyActive) DshColor.Accent.copy(alpha = 0.55f)
+            else DshColor.OutlineDark.copy(alpha = 0.35f),
         ),
     ) {
-        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 15.dp, bottom = 15.dp)) {
+        Column(Modifier.padding(start = 16.dp, end = 6.dp, top = 13.dp, bottom = 6.dp)) {
 
-            // 名字行
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(9.dp)
-                        .clip(CircleShape)
-                        .background(dot),
+                Icon(
+                    painterResource(FnhIcons.Device),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(17.dp),
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    conn.displayName(),
+                    group.name,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    // ★ weight(1f) 而不是 weight(1f, fill = false)。
-                    //
-                    // fill = false 时这个 Text 只占内容宽度，于是它和后面那个
-                    // Spacer(weight(1f)) **按内容宽度分剩余空间** —— 名字越长，
-                    // 右边那个齿轮越靠左，两张卡片的 ⚙ 就对不齐。
-                    // 让 Text 吃满剩余宽度、并把后面那个 Spacer 删掉，
-                    // 齿轮就永远贴右边。
                     modifier = Modifier.weight(1f),
                 )
-                if (active) {
-                    Spacer(Modifier.width(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = DshColor.Accent,
-                    ) {
-                        Text(
-                            "当前",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                        )
-                    }
+                if (group.rows.size > 1) {
+                    Text(
+                        "${group.rows.size} 条通道",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(4.dp))
                 }
-                IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = { onEdit(group.rows.first()) }, modifier = Modifier.size(34.dp)) {
                     Icon(
                         painterResource(FnhIcons.Settings),
                         contentDescription = "编辑",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(17.dp),
+                        modifier = Modifier.size(16.dp),
                     )
                 }
             }
 
-            // 地址 —— 只在用户起过名字时才单独显示。
-            // 没起名时标题就是地址推出来的（displayName 的回退），再显示一遍是重复。
-            if (conn.name.isNotBlank()) {
+            group.rows.forEach { conn ->
+                ChannelRow(
+                    conn = conn,
+                    status = statuses[conn.url],
+                    active = conn.id == activeId,
+                    probing = probing && statuses[conn.url] == null,
+                    onClick = { onEnter(conn) },
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+/** 一条通道：标签 + 地址 + 状态；点一下就走这条。 */
+@Composable
+private fun ChannelRow(
+    conn: Connection,
+    status: ConnectionProbe.Status?,
+    active: Boolean,
+    probing: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(start = 2.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(statusColor(status)),
+            )
+            Spacer(Modifier.width(9.dp))
+            // 通道标签：一眼分清走的是哪条网
+            Surface(
+                shape = RoundedCornerShape(5.dp),
+                color = if (channelLabel(conn.url) == "Tailscale") softAccent(0.18f)
+                else MaterialTheme.colorScheme.surface,
+            ) {
+                Text(
+                    channelLabel(conn.url),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                    color = if (channelLabel(conn.url) == "Tailscale") DshColor.Accent
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
                 Text(
                     conn.url.removePrefix("http://"),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 19.dp, top = 3.dp),
+                )
+                Text(
+                    statusLine(status, probing),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                    color = statusColor(status),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-
-            // 状态
-            Spacer(Modifier.height(if (conn.name.isNotBlank()) 6.dp else 4.dp))
-            Text(
-                when {
-                    probing -> "检查中…"
-                    status == null -> "未检查"
-                    !status.online -> status.error.ifEmpty { "连不上" }
-                    !status.listening -> "连到了，但转发层没在监听（电脑上 dshgo 没起来）"
-                    else -> buildString {
-                        append(status.ms).append(" ms")
-                        if (status.version.isNotEmpty()) append(" · v").append(status.version)
-                        if (status.needsPassword) append(" · 需要解锁")
-                        if (status.updateAvailable) append(" · 插件有新版")
-                    }
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = when {
-                    status != null && !status.online -> DshColor.Danger
-                    status != null && !status.listening -> DshColor.Warning
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 19.dp),
-            )
+            if (active) {
+                Spacer(Modifier.width(6.dp))
+                Surface(shape = RoundedCornerShape(6.dp), color = DshColor.Accent) {
+                    Text(
+                        "当前",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -2251,8 +2410,18 @@ private fun EditConnectionDialog(
 
 // ---------------- 连接页：两条地址 + 自动选路 ----------------
 
+private const val PREF_LAN = "lan_url"
 private const val PREF_TAIL = "tail_url"
 private const val PREF_AUTO = "auto_route"
+
+/** 引擎状态 → 一句人话（连接页与设置页共用）。 */
+internal fun tsStateText(state: String): String = when {
+    state.isBlank() -> "未启动"
+    state == "Running" -> "已连接"
+    state == "NeedsLogin" -> "等待登录"
+    state == "Starting" -> "启动中"
+    else -> state
+}
 
 /** 当前是否接在 Wi-Fi / 以太网上：家里局域网只有这两种网络能直连。 */
 private fun isOnWifi(context: Context): Boolean {

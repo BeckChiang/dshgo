@@ -11,24 +11,27 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * 探测每条连接「活着吗」。
+ * 探测每条连接「活着吗、活到哪一层」。
  *
- * ## 为什么不需要登录也能给出有用的状态
+ * ## 四层状态，而不是「在线 / 离线」
  *
- * 探针打的是插件自己注册的两个端点：
+ * 手机上遇到的情况本来就有四种，混成两种一定会说错话：
  *
- * - `/__dshgo__/info` —— 插件在不在监听、上游端口、版本、是不是 Tailscale 地址
- * - `/__dshgo__/auth/status` —— 宿主有没有设访问密码
+ * 1. **连不上** —— TCP 都到不了：电脑关机、不在同一网络、dshgo 没起。
+ * 2. **要密码** —— 端点回了 401，说明电脑好好的，只是没解锁。
+ * 3. **dsh web 没起来** —— 插件在应答，但它转发的上游（`dsh web`）没在监听。
+ * 4. **在线** —— 上游也通，能直接进。
  *
- * 两个都**不需要先解锁**（`auth/status` 是闸门的白名单之一，见 lib/gate.mjs）。
- * 所以列表里那些你从没登录过的 DSH，也能显示「在线 / 离线 / 版本 / 要不要密码」。
+ * 以前「3」被写成「连到了，但转发层没在监听（电脑上 dshgo 没起来）」，
+ * 把两个不同的原因混在同一句里，谁也看不懂到底该去开哪个。
  *
- * ## 做不到的那部分，说清楚
+ * ## 探针打什么
  *
- * **「这台 DSH 里有几个会话在跑」拿不到** —— 那要先登录它，而列表里的连接
- * 你未必都存过密码。当前连着的那一条有实时会话状态，靠的是事件流，不是探测。
+ * `/__dshgo__/info` 和 `/__dshgo__/auth/status` 都**不需要先解锁**，
+ * 所以从没登录过的电脑也能显示在线、延迟、版本、要不要密码。
  *
- * 不假装能做到，界面上也就不会出现一个永远空着的「0 个会话」。
+ * **「这台机器里有几个会话在跑」拿不到** —— 那要先登录它。所以不显示，
+ * 而不是放一个永远空着的「0 个会话」。
  */
 object ConnectionProbe {
 
@@ -42,9 +45,19 @@ object ConnectionProbe {
             .build()
     }
 
+    /** 状态的层级。界面只按这个着色、写文案，不再自己 if-else 拼。 */
+    enum class Level { Offline, Locked, NoUpstream, NoProxy, Online }
+
     /** 一条连接的探测结果。 */
     data class Status(
-        val online: Boolean = false,
+        /** 插件端点应答了（含 401）。false 表示 TCP 都没通。 */
+        val reachable: Boolean = false,
+        /** 端点回了 401：电脑在线，只是要访问密码。 */
+        val locked: Boolean = false,
+        /** 插件在监听转发层。 */
+        val listening: Boolean = false,
+        /** 上游 `dsh web` 在监听。插件没报这个字段时按「未知」处理成 true。 */
+        val upstreamReachable: Boolean = true,
         /** 往返耗时（毫秒）。越小越可能是局域网直连。 */
         val ms: Long = 0L,
         /** 插件的版本；探不到时为空。 */
@@ -53,23 +66,41 @@ object ConnectionProbe {
         val latestVersion: String = "",
         /** 宿主开了访问密码 —— 连它要先验证。 */
         val needsPassword: Boolean = false,
-        /** 插件在监听。false 说明服务端起来但转发层没就绪。 */
-        val listening: Boolean = false,
-        /** 上游 `dsh web` 的端口，用来判断对面是不是 dshgo 的转发层。 */
+        /** 上游 `dsh web` 的端口。 */
         val upstreamPort: Int = 0,
+        /** 这台电脑的稳定标识（插件算的）；老版本插件为空。 */
+        val deviceId: String = "",
+        /** 电脑的主机名。 */
+        val deviceName: String = "",
+        /** 插件自报的局域网地址列表（可能不止一条网卡）。 */
+        val lanUrls: List<String> = emptyList(),
+        /** 插件自报的 Tailscale 地址列表。 */
+        val tailUrls: List<String> = emptyList(),
         /** 失败原因；成功时为空。 */
         val error: String = "",
     ) {
-        /** 有插件更新可装（只对自己这条有意义，但每条都能算）。 */
-        val updateAvailable: Boolean get() = version.isNotEmpty() && latestVersion.isNotEmpty() &&
-            com.dshgo.app.data.UpdateCheck.isNewer(latestVersion, version)
+        /** 真正能进（不是「要密码」，也不是「上游没起」）。 */
+        val online: Boolean get() = reachable && !locked && upstreamReachable && listening
+
+        val level: Level
+            get() = when {
+                !reachable -> Level.Offline
+                locked -> Level.Locked
+                !listening -> Level.NoProxy
+                !upstreamReachable -> Level.NoUpstream
+                else -> Level.Online
+            }
+
+        /** 有插件更新可装。 */
+        val updateAvailable: Boolean
+            get() = version.isNotEmpty() && latestVersion.isNotEmpty() &&
+                UpdateCheck.isNewer(latestVersion, version)
     }
 
     /**
      * 并发探一批。返回 `url → Status`。
      *
      * 并发而不是串行：五条连接串行各等 2.5 秒就是 12 秒，列表转半天。
-     * 并发最坏 2.5 秒。
      */
     suspend fun probeAll(connections: List<Connection>): Map<String, Status> =
         withContext(Dispatchers.IO) {
@@ -88,7 +119,8 @@ object ConnectionProbe {
                 // 不是「连不上」。以前这里直接判 offline 并把 HTTP 401 标红，把人劝退了。
                 val locked = (it.message ?: "").contains("HTTP 401")
                 return@withContext Status(
-                    online = locked,
+                    reachable = locked,
+                    locked = locked,
                     ms = System.currentTimeMillis() - started,
                     needsPassword = locked,
                     error = if (locked) "" else friendly(it),
@@ -98,7 +130,7 @@ object ConnectionProbe {
         // 确认对面确实是 dshgo 的转发层，而不是同网段某个碰巧开了端口的东西
         if (info.optString("name") != "dshgo") {
             return@withContext Status(
-                online = false,
+                reachable = false,
                 ms = System.currentTimeMillis() - started,
                 error = "这个地址上不是 dshgo",
             )
@@ -110,14 +142,25 @@ object ConnectionProbe {
             .getOrNull()?.optBoolean("hasPassword", false) ?: false
 
         Status(
-            online = true,
+            reachable = true,
+            listening = info.optBoolean("listening", false),
+            // 老版本插件没有这个字段：缺省按 true，免得升级前所有人一起报「上游没起」
+            upstreamReachable = info.optBoolean("upstreamReachable", true),
             ms = ms,
             version = info.optString("version"),
             latestVersion = info.optString("latestVersion"),
             needsPassword = needsPassword,
-            listening = info.optBoolean("listening", false),
             upstreamPort = info.optInt("upstreamPort", 0),
+            deviceId = info.optString("deviceId"),
+            deviceName = info.optString("deviceName"),
+            lanUrls = info.optJSONObject("addrs")?.optJSONArray("lan").toStringList(),
+            tailUrls = info.optJSONObject("addrs")?.optJSONArray("tail").toStringList(),
         )
+    }
+
+    private fun org.json.JSONArray?.toStringList(): List<String> {
+        if (this == null) return emptyList()
+        return (0 until length()).mapNotNull { i -> optString(i).takeIf { it.isNotBlank() } }
     }
 
     private fun getJson(url: String): JSONObject {
@@ -133,14 +176,16 @@ object ConnectionProbe {
     private fun friendly(t: Throwable): String {
         val m = (t.message ?: "").lowercase()
         return when {
+            // 连接被拒：可能是电脑没开，也可能是电脑开着但 dshgo 没起。
+            // 分不出来就别假装分得出来，两件事一起说。
             "failed to connect" in m || "econnrefused" in m ->
-                "拒绝连接 —— 电脑上的 dsh web 没在运行？"
+                "连不上 —— 电脑没开、dshgo 没启动，或不在同一网络"
             "timeout" in m || "timed out" in m ->
                 "连不上 —— 不在同一网络？"
             "unable to resolve host" in m ->
                 "地址解析不了"
             "地址格式不对" in m -> "地址格式不对"
-            "http 401" in m -> "在线，需要访问密码"
+            "http 401" in m -> "需要密码登录"
             "http 404" in m -> "这个地址上没有 dshgo"
             else -> t.message?.take(60) ?: "探测失败"
         }
