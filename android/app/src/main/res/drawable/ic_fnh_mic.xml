@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 语音输入（mic）· Fnh Go 图标集，24dp 网格，线宽 1.9，圆头端点。着色交给 Icon(tint = ...)，不要在矢量里写死主题色。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12.0 2.6 H12.0 A3.0 3.0 0 0 1 15.0 5.6 V10.0 A3.0 3.0 0 0 1 12.0 13.0 H12.0 A3.0 3.0 0 0 1 9.0 10.0 V5.6 A3.0 3.0 0 0 1 12.0 2.6 Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M5.6 11.2a6.4 6.4 0 0 0 12.8 0"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M12 17.6 V21"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>

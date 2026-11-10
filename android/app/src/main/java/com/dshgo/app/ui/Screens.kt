@@ -149,7 +149,7 @@ fun SetupScreen(
                     onClick = onCancel,
                     modifier = Modifier.align(Alignment.Start),
                 ) {
-                    Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
+                    Icon(painterResource(FnhIcons.Back), contentDescription = "返回")
                 }
                 Spacer(Modifier.height(6.dp))
             } else {
@@ -380,7 +380,7 @@ private fun ErrorNote(message: String) {
         verticalAlignment = Alignment.Top,
     ) {
         Icon(
-            Icons.Rounded.Warning,
+            painterResource(FnhIcons.Warning),
             contentDescription = null,
             tint = DshColor.Danger,
             modifier = Modifier.size(18.dp),
@@ -401,18 +401,15 @@ private fun BrandMark(size: Int = 62) {
         modifier = Modifier
             .size(size.dp)
             .clip(RoundedCornerShape((size * 0.28f).dp))
-            .background(
-                Brush.linearGradient(
-                    listOf(Color8(0x9B6BFF), Color8(0x6C5CE7), Color8(0x4338CA)),
-                ),
-            ),
+            .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        // 复用启动图标里的终端提示符矢量，品牌形象与桌面图标一致
+        // 品牌 F：由 logo 手描轮廓生成的三块矢量，颜色就是 logo 本身的灰 + 蓝，
+        // 所以这里 tint 用 Color.Unspecified —— 不能让主题色把它盖掉。
         Icon(
             painter = painterResource(R.drawable.ic_brand_f),
             contentDescription = null,
-            tint = androidx.compose.ui.graphics.Color.White,
+            tint = androidx.compose.ui.graphics.Color.Unspecified,
             modifier = Modifier.size(size.dp),
         )
     }
@@ -1180,7 +1177,7 @@ private fun SegmentedControl(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (active) {
                             Icon(
-                                Icons.Rounded.Check,
+                                painterResource(FnhIcons.Check),
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(14.dp),
@@ -1359,7 +1356,7 @@ fun DshLoadingOverlay(
                 }
             } else {
                 Icon(
-                    Icons.Rounded.Warning,
+                    painterResource(FnhIcons.Warning),
                     contentDescription = null,
                     tint = DshColor.Danger,
                     modifier = Modifier.size(40.dp),
@@ -1432,7 +1429,7 @@ fun DshStatusStrip(
             // 比通知 / 麦克风这些更靠外一层。
             IconButton(onClick = onHome, modifier = Modifier.size(38.dp)) {
                 Icon(
-                    Icons.Rounded.ArrowBack,
+                    painterResource(FnhIcons.Back),
                     contentDescription = "返回连接列表",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(19.dp),
@@ -1461,7 +1458,7 @@ fun DshStatusStrip(
             Box {
                 IconButton(onClick = onNotice) {
                     Icon(
-                        Icons.Rounded.Notifications,
+                        painterResource(FnhIcons.Bell),
                         contentDescription = "通知",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(21.dp),
@@ -1492,7 +1489,7 @@ fun DshStatusStrip(
             // 语音输入：手机上打字是最大的摩擦，而 prompt 恰恰适合用说的
             IconButton(onClick = onVoice) {
                 Icon(
-                    DshIcons.Mic,
+                    painterResource(FnhIcons.Mic),
                     contentDescription = "语音输入",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(21.dp),
@@ -1500,7 +1497,7 @@ fun DshStatusStrip(
             }
             IconButton(onClick = onReload) {
                 Icon(
-                    Icons.Rounded.Refresh,
+                    painterResource(FnhIcons.Refresh),
                     contentDescription = "重新加载",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(21.dp),
@@ -1508,7 +1505,7 @@ fun DshStatusStrip(
             }
             IconButton(onClick = onSettings) {
                 Icon(
-                    Icons.Rounded.Settings,
+                    painterResource(FnhIcons.Settings),
                     contentDescription = "设置",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(21.dp),
@@ -1558,7 +1555,7 @@ fun PageErrorOverlay(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Warning,
+                    painter = painterResource(FnhIcons.Warning),
                     contentDescription = null,
                     modifier = Modifier.size(28.dp),
                     tint = DshColor.Danger,
@@ -1726,7 +1723,7 @@ fun LockScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Icon(
-                imageVector = Icons.Rounded.Lock,
+                painter = painterResource(FnhIcons.Lock),
                 contentDescription = null,
                 modifier = Modifier.size(30.dp),
                 tint = DshColor.Accent,
@@ -1929,10 +1926,11 @@ fun ConnectionsScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_whale),
+                    painter = painterResource(R.drawable.ic_brand_f),
                     contentDescription = null,
-                    tint = DshColor.Accent,
-                    modifier = Modifier.size(24.dp),
+                    // 品牌标记自带 logo 的灰 + 蓝，交给主题着色就变成单色块了
+                    tint = androidx.compose.ui.graphics.Color.Unspecified,
+                    modifier = Modifier.size(26.dp),
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
@@ -1947,8 +1945,6 @@ fun ConnectionsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                // 用文字「+」而不是图标：项目的图标集里没有 Add，
-                // 为一个加号引入整套 extended icons 不划算。
                 Surface(
                     onClick = onAdd,
                     shape = CircleShape,
@@ -1956,10 +1952,11 @@ fun ConnectionsScreen(
                     modifier = Modifier.size(36.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            "+",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = DshColor.Accent,
+                        Icon(
+                            painter = painterResource(FnhIcons.Add),
+                            contentDescription = "添加设备",
+                            tint = DshColor.Accent,
+                            modifier = Modifier.size(19.dp),
                         )
                     }
                 }
@@ -2137,7 +2134,7 @@ private fun ConnectionCard(
                 }
                 IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                     Icon(
-                        Icons.Rounded.Settings,
+                        painterResource(FnhIcons.Settings),
                         contentDescription = "编辑",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(17.dp),

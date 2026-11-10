@@ -1,29 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 启动器前景：品牌 F 彩色版，落在 108dp 的 66dp 安全区内。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Fnh Go：白色 F + 终端提示符 >，替代原来的终端窗口轮廓 -->
     <path
-        android:pathData="M43,36 L43,72"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="10"
-        android:strokeLineCap="round" />
+        android:fillColor="#FF9FA3A4"
+        android:pathData="M33.32 24.84 L32.33 25.29 L31.77 25.84 L31.44 26.40 L31.22 27.39 L31.22 39.37 L31.33 40.14 L31.66 40.92 L32.44 41.69 L33.77 42.14 L65.58 42.14 L66.47 41.92 L75.01 36.71 L75.78 35.93 L76.01 35.49 L76.23 34.71 L76.23 27.17 L75.78 25.95 L75.12 25.29 L74.12 24.84 Z" />
     <path
-        android:pathData="M43,41 L66,41"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="10"
-        android:strokeLineCap="round" />
+        android:fillColor="#FF9FA3A4"
+        android:pathData="M33.77 46.13 L32.44 46.57 L31.66 47.35 L31.33 48.12 L31.22 48.90 L31.22 77.06 L31.44 78.17 L31.66 78.61 L32.44 79.39 L37.20 81.49 L41.75 82.82 L45.52 83.49 L46.96 83.49 L47.63 83.27 L48.51 82.49 L48.84 81.94 L49.07 81.05 L49.07 48.68 L48.62 47.35 L47.85 46.57 L46.52 46.13 Z" />
     <path
-        android:pathData="M43,57 L60,57"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="9"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M65,52 L73,59.5 L65,67"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="7"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:fillColor="#FF268DCF"
+        android:pathData="M54.61 46.13 L53.72 46.35 L53.17 46.68 L52.61 47.24 L52.17 48.24 L52.17 61.32 L52.73 62.54 L53.39 63.09 L54.17 63.42 L63.48 63.42 L63.92 63.31 L75.23 56.33 L75.90 55.55 L76.23 54.55 L76.23 48.57 L76.01 47.68 L75.34 46.79 L74.34 46.24 L73.68 46.13 Z" />
 </vector>
