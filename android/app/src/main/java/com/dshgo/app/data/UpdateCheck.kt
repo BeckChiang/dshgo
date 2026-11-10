@@ -25,8 +25,13 @@ import java.util.concurrent.TimeUnit
  */
 object UpdateCheck {
 
-    /** 官方下载地址（release 资产名固定，这条链接长期有效）。 */
-    const val APK_URL = "https://github.com/BeckChiang/dshgo/releases/latest/download/fnh-go.apk"
+    /**
+     * 下载地址：GitHub Releases 的最新资产。
+     *
+     * 资产名固定为 `FnhGo-latest.apk`，每次发版覆盖同一个名字 —— 于是这条链接
+     * 永远指向「最新安装包」，不需要改代码，也不需要再维护 jsDelivr 的 dist 分支。
+     */
+    const val APK_URL = "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk"
 
     /**
      * jsDelivr 的**包元数据接口** —— 返回仓库的全部 tag。
@@ -134,7 +139,9 @@ object UpdateCheck {
         // 单元测试里专门有 isNewer("3.10.0","3.9.0") 防这个坑，结果调用处我自己忘了用。
         val best = candidates.reduceOrNull { a, b -> if (isNewer(b.first, a.first)) b else a }
         val latest = best?.first
-        val apkUrl = best?.second ?: APK_URL
+        // ★ 版本号可以来自任何源，但下载地址统一走 releases/latest 的固定资产。
+        //   镜像地址（jsDelivr dist 分支）已经不再发布，留着只会 404。
+        val apkUrl = APK_URL
 
         prefs.setLastUpdateCheckAt(now)
         if (latest != null) prefs.setLastKnownLatest(latest)

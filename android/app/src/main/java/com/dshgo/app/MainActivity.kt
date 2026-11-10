@@ -430,7 +430,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         if (ConnectionStore.all(this).isEmpty() && !prefs.hasEntryUrl()) {
             ui = ui.copy(screen = Screen.Setup)
         } else {
-            refreshConnections()
             ui = ui.copy(screen = Screen.Connections)
         }
         maybeHandleShare(intent)
@@ -441,16 +440,21 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         com.dshgo.app.data.EventLog.event(this, "app", "onCreate v${BuildConfig.VERSION_NAME}")
         if (prefs.notifyEnabled()) startWatching()
 
-        // 后台查一次更新（内部有 24 小时节流，失败静默）
-        checkUpdate()
-
         // 已知地址不止一个时，看看现在这个还用不用得上
         autoPickAddress()
+
+        // ★ 首屏不等探测：探测与查更新都挪到第一帧之后。
+        //   冷启动时它们会和 Compose 首帧、WebView 初始化抢 CPU 与网络，
+        //   表现就是点了图标先停一下才出画面。post 到 webHost 上，
+        //   等这一轮布局绘制做完再开工。
+        webHost.post {
+            // 后台查一次更新（内部有 24 小时节流，失败静默）
+            checkUpdate()
+            // 连接列表：首次读取会把老版本的单地址迁进来（见 ConnectionStore.migrateIfNeeded）
+            refreshConnections()
+        }
         watchNetwork()
         maybeHandleShortcut(intent)
-
-        // 连接列表：首次读取会把老版本的单地址迁进来（见 ConnectionStore.migrateIfNeeded）
-        refreshConnections()
 
         // 解锁方式与设备能力各读一次（重组时不必反复查系统）
         ui = ui.copy(
@@ -1482,6 +1486,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      * 问宿主要不要解锁；要就弹界面，不要就直接加载。
      */
     private fun gateThenLoad(entry: String) {
+        // ★ 直连快通道：本机已经有这个地址的解锁 Cookie 时，跳过 /auth/status 那一跳。
+        //
+        // 之前无论如何都先问一次「要不要解锁」，多一次往返、解锁页还会闪一下。
+        // Cookie 还在就说明宿主不会再拦，直接加载页面；万一它其实已经失效，
+        // 页面 401 会走原有的自愈路径重新弹解锁页 —— 两边的行为是一致的。
+        val cookie = CookieManager.getInstance().getCookie(entry).orEmpty()
+        val unlocked = cookie.split(';').any {
+            it.trim().startsWith(UnlockClient.COOKIE_NAME + "=")
+        }
+        if (unlocked) {
+            loadDsh(entry)
+            return
+        }
         lifecycleScope.launch {
             val required = UnlockClient.required(entry)
             if (!required) {
