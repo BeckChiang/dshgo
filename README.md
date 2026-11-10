@@ -81,7 +81,7 @@ node --test test/proxy.test.mjs
 node --test test/version.test.mjs
 ```
 
-App 侧真机清单见 `work/` 下的 `TEST-CHECKLIST-beck.30.md`（随每次发版更新）。
+App 侧真机清单见 `work/` 下的 `TEST-CHECKLIST-beck.31.md`（随每次发版更新）。
 
 ## 更新记录
 
