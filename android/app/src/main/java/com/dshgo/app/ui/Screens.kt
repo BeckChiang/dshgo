@@ -2258,8 +2258,30 @@ private fun channelLabel(url: String): String {
     }
 }
 
-/** 状态一句话 —— 列表里的每条通道共用这一份，不再各写一遍。 */
-private fun statusLine(status: ConnectionProbe.Status?, probing: Boolean): String = when {
+/**
+ * 设备卡上到底显示哪条通道。
+ *
+ * 判断顺序：当前网络下能用的那条 → 上次用的那条 → 顺序第一条。
+ * 「能用」= 探测没过 Offline（能连、要密码、转发层没就绪都算能用，
+ * 因为这些都能靠重连/输密码解决，只有 TCP 不通才是真的没网）。
+ */
+private fun visibleRow(
+    rows: List<Connection>,
+    statuses: Map<String, ConnectionProbe.Status>,
+    activeId: String?,
+    onWifi: Boolean,
+): Connection {
+    fun usable(c: Connection) = statuses[c.url]?.let { it.level != ConnectionProbe.Level.Offline } ?: false
+    val lan = rows.firstOrNull { channelLabel(it.url) == "局域网" }
+    val tail = rows.firstOrNull { channelLabel(it.url) == "Tailscale" }
+    val ordered = if (onWifi) listOfNotNull(lan, tail) else listOfNotNull(tail, lan)
+    return ordered.firstOrNull(::usable)
+        ?: rows.firstOrNull { it.id == activeId }
+        ?: ordered.firstOrNull()
+        ?: rows.first()
+}
+
+/** 状态一句话 —— 列表里的每条通道共用这一份，不再各写一遍。 */private fun statusLine(status: ConnectionProbe.Status?, probing: Boolean): String = when {
     probing -> "检查中…"
     status == null -> "未检查"
     else -> when (status.level) {
@@ -2347,15 +2369,19 @@ private fun DeviceCard(
                 }
             }
 
-            group.rows.forEach { conn ->
-                ChannelRow(
-                    conn = conn,
-                    status = statuses[conn.url],
-                    active = conn.id == activeId,
-                    probing = probing && statuses[conn.url] == null,
-                    onClick = { onEnter(conn) },
-                )
-            }
+            // ★ 只显示「现在这个网络下该走的那条」：两条都列出来用户没法判断点哪个。
+            //   都不可用时显示一行「断联」，点它仍然按上次成功的那条重试。
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val onWifi = androidx.compose.runtime.remember(ctx) { com.dshgo.app.data.AutoRoute.onWifi(ctx) }
+            val visible = visibleRow(group.rows, statuses, activeId, onWifi)
+            ChannelRow(
+                conn = visible,
+                status = statuses[visible.url],
+                active = visible.id == activeId,
+                probing = probing && statuses[visible.url] == null,
+                dead = statuses[visible.url]?.level == ConnectionProbe.Level.Offline,
+                onClick = { onEnter(visible) },
+            )
             Spacer(Modifier.height(6.dp))
         }
     }
@@ -2368,6 +2394,7 @@ private fun ChannelRow(
     status: ConnectionProbe.Status?,
     active: Boolean,
     probing: Boolean,
+    dead: Boolean = false,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -2411,9 +2438,9 @@ private fun ChannelRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    statusLine(status, probing),
+                    if (dead) "断联" else statusLine(status, probing),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                    color = statusColor(status),
+                    color = if (dead) DshColor.Danger else statusColor(status),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

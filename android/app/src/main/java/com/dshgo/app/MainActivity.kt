@@ -467,6 +467,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 if (!current.startsWith("http")) return@runOnUiThread
                 val target = AutoRoute.pick(this, ConnectionStore.all(this), current)
                 if (target != null && target != current) {
+                    // ★ 换路后要把 entryUrl 一起翻过去：顶部地址/通道标签读的是它，
+                    //   锁页、解锁、SessionWatcher 也都按它走。以前只 loadUrl，
+                    //   于是页面换到外网了，顶上还写着局域网地址。
+                    prefs.setEntryUrl(target)
+                    prefs.rememberUrl(target)
+                    val targetConn = ConnectionStore.all(this).firstOrNull { it.url == target }
+                    if (targetConn != null) ConnectionStore.setActive(this, targetConn.id)
+                    ui = ui.copy(entryUrl = target, activeConnId = targetConn?.id ?: ui.activeConnId)
+                    ensureThemeCookie(target)
                     webView.loadUrl(target, themeHeaders())
                     // ★ 换路必须说一声。以前地址悄悄换掉：会话重连、滚动位置丢了，
                     // 用户只看到页面一抖，以为是网络出问题。
@@ -620,7 +629,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
-            setBackgroundColor(Color.WHITE)
+            // 深色下别先闪一块白：WebView 自己的底色跟系统主题走，
+            // 否则页面还没画出来时是一整屏白（夜间看着像卡住了）。
+            setBackgroundColor(
+                if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+                ) 0xFF0B0E14.toInt() else 0xFFF4F6F9.toInt()
+            )
         }
         WebView.setWebContentsDebuggingEnabled(true)
 
@@ -1743,8 +1758,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         when {
             ui.panelOpen -> ui = ui.copy(panelOpen = false)
             ui.settingsOpen -> ui = ui.copy(settingsOpen = false)
-            // DSH 没有 URL 路由，canGoBack 基本都是 false → 直接退出
+            // DSH 没有 URL 路由，canGoBack 基本都是 false → 退到设备选择页
             ui.screen == Screen.Dsh && webView.canGoBack() -> webView.goBack()
+            // ★ 从 DSH 界面（含锁页）按返回，先回到「选择设备」，而不是一把退出 App。
+            //   退出是用户在设备页再按一次返回时的事。
+            ui.screen == Screen.Dsh || ui.screen == Screen.Locked ->
+                ui = ui.copy(screen = Screen.Connections)
             // 从设置里「更改地址」进来的，给一条退路
             ui.screen == Screen.Setup && loaded -> ui = ui.copy(screen = Screen.Dsh)
             else -> finish()
