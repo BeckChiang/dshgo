@@ -206,10 +206,73 @@ object WidgetStateStore {
         ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     fun save(ctx: Context, rawJson: String) {
+        val now = System.currentTimeMillis()
+        val previous = load(ctx)
+        val previousAt = savedAt(ctx)
+        val merged = runCatching {
+            val fresh = WidgetState.parse(JSONObject(rawJson))
+            // 宿主偶尔会回一份「少了几个会话」的快照（列表正在重建、limit 被截断）。
+            // 直接覆盖会让桌面上正在跑的几条会话整行消失；5 分钟内的旧快照里
+            // 还有这些 id，就把它们补回来 —— 宁可多显示一条已结束的，也别丢在跑的。
+            keepMissing(fresh, previous, previousAt, now)
+        }.getOrNull()
+        val json = if (merged != null) toJson(merged).toString() else rawJson
         sp(ctx).edit()
-            .putString(KEY_JSON, rawJson)
-            .putLong(KEY_SAVED_AT, System.currentTimeMillis())
+            .putString(KEY_JSON, json)
+            .putLong(KEY_SAVED_AT, now)
             .commit()
+    }
+
+    /** 新快照缺的会话，如果旧快照里有、且旧快照还新鲜，就补回去。 */
+    private fun keepMissing(
+        fresh: WidgetState,
+        previous: WidgetState?,
+        previousAt: Long,
+        now: Long,
+    ): WidgetState {
+        if (previous == null) return fresh
+        if (previousAt <= 0L || now - previousAt > 5 * 60 * 1000L) return fresh
+        val have = HashMap<String, WidgetState.Session>()
+        fresh.workspaces.forEach { ws -> ws.sessions.forEach { have[it.id] = it } }
+        var added = 0
+        val spaces = fresh.workspaces.map { ws ->
+            val old = previous.workspaces.firstOrNull { it.id == ws.id } ?: return@map ws
+            val missing = old.sessions.filter { it.id !in have }
+            if (missing.isEmpty()) ws else { added += missing.size; ws.copy(sessions = ws.sessions + missing) }
+        }
+        return if (added == 0) fresh else fresh.copy(workspaces = spaces)
+    }
+
+    /** 把模型写回 JSON：只在 [save] 的合并路径上用，字段与 [WidgetState.parse] 对称。 */
+    private fun toJson(s: WidgetState): JSONObject = JSONObject().apply {
+        put("updatedAt", s.updatedAt ?: JSONObject.NULL)
+        put("pricingLabel", s.pricingLabel ?: JSONObject.NULL)
+        put("balance", s.balance?.let {
+            JSONObject().put("amount", it.amount).put("currency", it.currency)
+        } ?: JSONObject.NULL)
+        put("workspaces", JSONArray().apply {
+            s.workspaces.forEach { ws ->
+                put(JSONObject().apply {
+                    put("id", ws.id)
+                    put("title", ws.title)
+                    put("sessionCount", ws.sessionCount)
+                    put("sessions", JSONArray().apply {
+                        ws.sessions.forEach { ss ->
+                            put(JSONObject().apply {
+                                put("id", ss.id)
+                                put("title", ss.title)
+                                put("status", ss.status)
+                                put("contextPercent", ss.contextPercent ?: JSONObject.NULL)
+                                put("pendingApproval", ss.pendingApproval)
+                                put("summary", ss.summary ?: JSONObject.NULL)
+                                put("pinned", ss.pinned)
+                                put("todo", JSONArray().apply { ss.todo.forEach { put(it) } })
+                            })
+                        }
+                    })
+                })
+            }
+        })
     }
 
     fun load(ctx: Context): WidgetState? {

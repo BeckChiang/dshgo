@@ -844,6 +844,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 res: WebResourceResponse,
             ) {
                 if (view !== webView) return   // 同上：别把另一条连接的错误显示在这边
+                if (res.statusCode >= 400 && !req.isForMainFrame) {
+                    val path = runCatching { java.net.URI(req.url.toString()).path.orEmpty() }
+                        .getOrDefault("")
+                    if (path.contains("/api/") || path.contains("/__dshgo__/")) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastWebErrAt > 1_500L) {
+                            lastWebErrAt = now
+                            EventLog.event(this@MainActivity, "web", "HTTP ${res.statusCode} ${path.take(60)}")
+                        }
+                    }
+                }
                 if (!req.isForMainFrame || res.statusCode < 400) return
                 clearLoadTimeout()
                 if (ui.screen == Screen.Dsh) {
@@ -1198,6 +1209,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** 上次看到的深浅色（UI_MODE_NIGHT_MASK 的结果），用来区分「换主题」和「换尺寸」。 */
     private var lastUiMode = -1
+
+    // 子资源 4xx/5xx 的限流时间戳：用来抓「页面出来了、左栏会话列表却空着」这类
+    // 问题（多半是某个 /api/ 请求被挡或代理回了 502，而主文档是 200，界面不报错）。
+    // 每 1.5 s 最多记一条，够定位又不至于把事件日志刷满。
+    private var lastWebErrAt = 0L
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -1653,8 +1669,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             // 那条并成同一台电脑（否则列表里永远是两台）。
             val learned = runCatching { ConnectionStore.rememberDeviceIds(this@MainActivity, statuses) }
                 .getOrDefault(0)
-            val moved = runCatching { ConnectionStore.reconcileDevices(this@MainActivity, statuses) }
+            // 先按 URL 对齐（这条 URL 自己探通了），再按设备对齐 ——
+            // 后者能处理「电脑换了网段、旧局域网地址必然探不通」这种最常见的情况：
+            // 只要 Tailscale 那条通着，它上报的 addrs.lan 就把局域网那条改过来。
+            val movedByUrl = runCatching { ConnectionStore.reconcileDevices(this@MainActivity, statuses) }
                 .getOrDefault(0)
+            val movedByDevice = runCatching { ConnectionStore.reconcileByDevice(this@MainActivity, statuses) }
+                .getOrDefault(0)
+            val moved = movedByUrl + movedByDevice
             if (moved > 0) {
                 EventLog.event(this@MainActivity, "conn", "address moved x$moved")
                 Toast.makeText(

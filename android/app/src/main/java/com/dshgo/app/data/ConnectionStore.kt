@@ -158,6 +158,53 @@ object ConnectionStore {
     }
 
     /**
+     * 按**设备**对齐地址：只要同一台电脑的任意一条通道探通了，就用它上报的
+     * `addrs` 去修正其它通道。
+     *
+     * 为什么不能只按 URL 对：[reconcileDevices] 要求「这条 URL 自己探通了」，
+     * 而电脑换网段之后那条局域网地址**必然探不通** —— 于是它永远停着旧地址，
+     * 用户在 dsh 里切回局域网、回到列表，看到的还是上一次的地址。
+     * Tailscale 那条只要通，就能把电脑现在的局域网地址带回来。
+     *
+     * 返回改动了几条连接。
+     */
+    fun reconcileByDevice(ctx: Context, statuses: Map<String, ConnectionProbe.Status>): Int {
+        // deviceId → (lan 列表, tail 列表)：只收「本次确实探通了并且带了身份」的
+        val seen = HashMap<String, Pair<List<String>, List<String>>>()
+        statuses.values.forEach { st ->
+            if (st.deviceId.isBlank()) return@forEach
+            if (st.level == ConnectionProbe.Level.Offline) return@forEach
+            if (st.lanUrls.isEmpty() && st.tailUrls.isEmpty()) return@forEach
+            seen[st.deviceId] = st.lanUrls to st.tailUrls
+        }
+        if (seen.isEmpty()) return 0
+
+        val list = all(ctx).toMutableList()
+        val taken = list.map { it.url }.toHashSet()
+        var changed = 0
+        for (i in list.indices) {
+            val conn = list[i]
+            val id = conn.deviceId.ifBlank { statuses[conn.url]?.deviceId.orEmpty() }
+            if (id.isBlank()) continue
+            val pair = seen[id] ?: continue
+            val host = runCatching { java.net.URI(conn.url).host.orEmpty() }.getOrDefault("")
+            val isTail = host.startsWith("100.")
+            val reported = (if (isTail) pair.second else pair.first)
+                .firstOrNull { it.startsWith("http") } ?: continue
+            val normalized = reported.trimEnd('/')
+            if (normalized == conn.url) continue
+            // 新地址已经属于另一条连接：那是「换过来」，别合并错
+            if (normalized in taken) continue
+            taken.remove(conn.url)
+            taken.add(normalized)
+            list[i] = conn.copy(url = normalized, deviceId = id)
+            changed++
+        }
+        if (changed > 0) persist(ctx, list)
+        return changed
+    }
+
+    /**
      * 把探测到的 `deviceId` 记进连接里。
      *
      * 出门时局域网那条探不到，只有 Tailscale 那条能拿到 id；不落盘的话，
