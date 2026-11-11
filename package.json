@@ -1,6 +1,6 @@
 {
   "name": "@xiazhi88/dshgo",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "把只监听 127.0.0.1 的 dsh web 暴露到局域网，并带上移动端适配 —— 一个包，手机连上就能用。",
   "type": "module",
   "main": "lib/index.js",
@@ -63,7 +63,7 @@
     }
   },
   "dshgo": {
-    "appVersion": "4.5.0-beck.48",
+    "appVersion": "4.5.0-beck.52",
     "appApk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
     "appApkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk"
   }

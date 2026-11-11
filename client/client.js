@@ -6026,9 +6026,10 @@ window.__ModuleLoader__.load({
      * latest，文件名是照字面取的 —— 名字里带版本的话，发下一版当天就 404，
      * 而且不会有人察觉。详见收录指南里那条警告。
      */
-    const APP_APK_URL = 'https://github.com/BeckChiang/dshgo/releases/latest/download/fnh-go.apk';
+    // 兜底常量只用于「服务端没给 app 信息」的情况（离线 / GitHub 不通）。
+    // 正常路径是服务端从 GitHub Releases 查到的实时版本，见 /__dshgo__/info 的 app 字段。
+    const APP_APK_URL = 'https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk';
     const APP_RELEASES_URL = 'https://github.com/BeckChiang/dshgo/releases/latest';
-    const APP_VERSION = '4.5.0-beck.10';
 
     /**
      * 够宽才显示二维码。
@@ -6236,13 +6237,26 @@ window.__ModuleLoader__.load({
      */
     function AppCard(props) {
       const lanUrl = (props.lan && props.lan.length > 0) ? props.lan[0] : null;
+      // 版本与下载地址都来自服务端（/__dshgo__/info 的 app 字段，实时查 GitHub Releases）。
+      // 以前这两个是写死在这里的，于是页面永远显示 beck.10、下载链接指向已不存在的 fnh-go.apk。
+      const app = props.app || {};
+      const appVersion = typeof app.version === 'string' ? app.version : '';
+      const pluginVersion = typeof props.pluginVersion === 'string' ? props.pluginVersion : '';
+      const apkUrl = (typeof app.apk === 'string' && app.apk) ? app.apk : APP_APK_URL;
+      const releasesUrl = (typeof app.releases === 'string' && app.releases) ? app.releases : APP_RELEASES_URL;
 
       return h('div', { style: styles.card },
         h('div', { style: styles.head },
           h('div', { style: styles.title }, L('手机 App', 'Mobile app')),
           h('span', { style: { ...styles.badge, color: C.brand, borderColor: C.brand } },
-            'v' + APP_VERSION),
+            appVersion ? 'App v' + appVersion : 'App'),
         ),
+
+        // 两个版本号都写出来：插件的版本是本机正在跑的，App 的是仓库里最新的。
+        // 分开显示才能回答「我到底装的是哪个插件、能不能配这个 App」。
+        h('div', { style: styles.muted },
+          (pluginVersion ? L('插件 v', 'Plugin v') + pluginVersion + ' · ' : '')
+          + (appVersion ? L('手机 App 最新 v', 'Phone app latest v') + appVersion : L('手机 App 版本未知', 'Phone app version unknown'))),
 
         h('div', { style: styles.muted },
           L('装这个 App 比用浏览器顺手：输入法不会挡住输入框、能上传附件、会话回答完会推送通知、随时可切换入口地址。',
@@ -6251,9 +6265,9 @@ window.__ModuleLoader__.load({
         // 直接下载 —— 手机上才给按钮，电脑上点了也装不了
         IS_ANDROID
           ? h('a', {
-              href: APP_APK_URL,
+              href: apkUrl,
               style: { ...styles.btn, display: 'inline-block', marginTop: 10, textDecoration: 'none' },
-            }, L('下载 APK（约 1.4 MB）', 'Download APK (about 1.4 MB)'))
+            }, L('下载 APK（约 34 MB）', 'Download APK (about 34 MB)'))
           : h('div', null,
               h('div', { style: styles.muted },
                 L('在手机浏览器里打开下面这个地址，回到同一页就能下载：',
@@ -6269,7 +6283,7 @@ window.__ModuleLoader__.load({
             'Android 10 or newer. Android will warn about an unknown source — allow it; the app is not on any store.')),
 
         h('a', {
-          href: APP_RELEASES_URL,
+          href: releasesUrl,
           target: '_blank',
           rel: 'noreferrer',
           style: styles.link,
@@ -6574,7 +6588,9 @@ window.__ModuleLoader__.load({
 
           stat(L('转发端口', 'Forward port'), (info && info.port) ? (':' + info.port) : '—'),
           stat(L('上游端口', 'Upstream port'), (info && info.upstreamPort) ? (':' + String(info.upstreamPort)) : '—'),
-          stat(L('版本', 'Version'), 'v' + APP_VERSION),
+          // 两个版本号分开写：插件是本机正在跑的，App 是仓库里最新的（服务端实时查）
+          stat(L('插件版本', 'Plugin version'), (info && info.version) ? ('v' + info.version) : '—'),
+          stat(L('手机 App 最新', 'Phone app latest'), (info && info.app && info.app.version) ? ('v' + info.app.version) : '—'),
 
           error
             ? h('div', { style: { ...styles.muted, color: C.err, marginTop: 8 } },
@@ -6614,7 +6630,11 @@ window.__ModuleLoader__.load({
         ),
 
         // 4) 手机 App（下载指向本项目仓库）
-        error ? null : h(AppCard, { lan, qr, copied, onCopy }),
+        error ? null : h(AppCard, {
+          lan, qr, copied, onCopy,
+          app: info && info.app,
+          pluginVersion: info && info.version,
+        }),
 
         // 5) 没有 Tailscale 时才给安装引导，已经有了就不占地方
         error || tailscale.length > 0 ? null : h(RemoteCard, { tailscale, copied, onCopy, qr }),
