@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.38",
+  "version": "4.5.0-beck.39",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "小组件显示「摘要」节、常驻通知显示「待完成」；底栏加地址与通道；事件流失败退避与半空闲重连"
+  "notes": "小组件行状态取实时运行集合、通道按 TCP 可达性独立排序、底栏只写通道"
 }
