@@ -558,7 +558,16 @@ object SessionWatcher {
             title = title,
             at = System.currentTimeMillis(),
             kind = kind,
-            detail = detail,
+            // 按会话取「待完成」：全局聚合会把别的会话的待办写进这条通知。
+            detail = run {
+                val mine = WidgetRefresher.todoFor(sessionId)
+                if (mine.isEmpty()) detail
+                else buildString {
+                    append("待完成：")
+                    append(mine.joinToString(" · ") { it.take(40) })
+                    if (!detail.isNullOrBlank()) append(" · ").append(detail.take(60))
+                }
+            },
         )
         _notices.value = (listOf(notice) + _notices.value).take(MAX_KEPT)
         _unseen.value += 1

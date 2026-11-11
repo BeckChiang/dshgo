@@ -50,13 +50,32 @@ object WidgetRefresher {
     var lastState: com.dshgo.app.data.WidgetState? = null
         private set
 
-    /** 所有会话里待完成的前 [limit] 条，给通知正文用。 */
+    /**
+     * 某个会话自己的待完成条目。
+     *
+     * 以前通知正文用全局聚合的 [todoLines]，于是「A 会话跑完」的通知里
+     * 写着 B 会话的待完成项 —— 用户一眼能看出对不上。
+     */
+    fun todoFor(sessionId: String, limit: Int = 2): List<String> =
+        lastState?.workspaces.orEmpty()
+            .flatMap { it.sessions }
+            .filter { it.id == sessionId }
+            .flatMap { it.todo }
+            .distinct()
+            .take(limit)
+
+    /** 所有会话里待完成的前 [limit] 条，给常驻通知正文用。 */
     fun todoLines(limit: Int = 2): List<String> =
         lastState?.workspaces.orEmpty()
             .flatMap { it.sessions }
             .flatMap { it.todo }
             .distinct()
             .take(limit)
+
+    /** 最近一次成功用的地址（底栏通道标签按它算，见 [WidgetStateClient.Result.Ok]）。 */
+    @Volatile
+    var lastOkBase: String = ""
+        private set
 
     /** 最近一次成功拉取的时间；0 = 还没成功过。 */
     @Volatile
@@ -81,6 +100,8 @@ object WidgetRefresher {
      * 用户点一下就能判断是「没连上」还是「需要解锁」。
      */
     fun statusText(): String {
+        // 正在拉取时先说「检查中」：用户点了刷新，界面得马上有反应。
+        if (inFlight?.isActive == true) return "检查中…"
         val base = when (lastOutcome) {
             Outcome.Ok -> ""
             Outcome.Locked -> "需要解锁"
@@ -124,6 +145,7 @@ object WidgetRefresher {
                         lastState = runCatching { com.dshgo.app.data.WidgetState.parse(org.json.JSONObject(r.raw)) }.getOrNull()
                         lastOutcome = Outcome.Ok
                         lastError = ""
+                        lastOkBase = r.base
                         lastOkAt = System.currentTimeMillis()
                     }
                     WidgetStateClient.Result.Locked -> {

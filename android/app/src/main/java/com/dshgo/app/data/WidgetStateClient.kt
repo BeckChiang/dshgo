@@ -38,8 +38,13 @@ object WidgetStateClient {
 
     /** 结果只区分「能用 / 锁着 / 暂时拿不到」，渲染层据此选降级文案。 */
     sealed interface Result {
-        /** 拿到并校验过的原始 JSON，交给 [WidgetStateStore] 落盘。 */
-        data class Ok(val raw: String) : Result
+        /**
+         * 拿到并校验过的原始 JSON，交给 [WidgetStateStore] 落盘。
+         *
+         * `base` 是**真正成功的那条地址**：小组件底栏的通道标签必须按它算，
+         * 不能按「首选地址」猜 —— 在外网挑中隧道、在局域网挑中局域网，猜错就显示错通道。
+         */
+        data class Ok(val raw: String, val base: String = "") : Result
 
         /** 桌面端开了访问密码，且本机没有可用的解锁密码。 */
         data object Locked : Result
@@ -117,7 +122,7 @@ object WidgetStateClient {
             // 宿主端点自己失败时会回 `{"error":{"code":"widget-state-failed",...}, "workspaces":[]}`
             // —— 这种「空壳」不能覆盖缓存，否则一次服务端 bug 就把卡片清成「这个工作区还没有会话」。
             if (body.contains("\"widget-state-failed\"")) return@withContext Result.Failed("端点报错")
-            Result.Ok(body)
+            Result.Ok(body, base)
         } catch (t: Throwable) {
             Result.Failed(t.message ?: t.javaClass.simpleName)
         }

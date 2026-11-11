@@ -1609,9 +1609,23 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             // 把 WebView 里已有的 Cookie 带上再探：已经解锁过的电脑会直接回 200，
             // 列表就显示「可以连接 · 在线」，而不是写着「需要密码登录」、点进去却能直开。
             val cm = CookieManager.getInstance()
+            val cookieOf: (String) -> String? = { url ->
+                runCatching { cm.getCookie(url) }.getOrNull()
+            }
             val statuses = runCatching {
-                ConnectionProbe.probeAll(list) { url -> runCatching { cm.getCookie(url) }.getOrNull() }
+                ConnectionProbe.probeAll(list, cookieOf)
             }.getOrDefault(emptyMap())
+            // R11 取证：列表说「需要解锁」但点进去能直开，说明「探测看到的身份」与
+            // 「WebView 实际状态」不一致。把每条的 级别 / 是否带 Cookie / 耗时 记进事件日志，
+            // 下次复现时能直接从日志判断是「Cookie 没读到」还是「插件不认 401 之外的路径」。
+            statuses.forEach { (url, st) ->
+                val hadCookie = runCatching { !cookieOf(url).isNullOrBlank() }.getOrDefault(false)
+                EventLog.event(
+                    this@MainActivity,
+                    "probe",
+                    "${hostOf(url)} level=${st.level} ms=${st.ms} cookie=$hadCookie id=${st.deviceId.ifEmpty { "-" }}",
+                )
+            }
             // 电脑换了 Wi-Fi / 路由器换了网段 → 局域网地址会变。
             // 原地改地址，而不是让列表里多出一台「新设备」。
             // 记住这次探到的设备身份：出门时局域网那条探不到，靠它才能和 Tailscale
@@ -1628,13 +1642,41 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     Toast.LENGTH_SHORT,
                 ).show()
             }
+            val refreshed = if (moved > 0 || learned > 0) ConnectionStore.all(this@MainActivity)
+            else ui.connections
             ui = ui.copy(
                 connStatuses = statuses,
                 probing = false,
-                connections = if (moved > 0 || learned > 0) ConnectionStore.all(this@MainActivity)
-                else ui.connections,
+                connections = refreshed,
             )
             maybeRebuildTunnel(statuses)
+            // R17：地址变了但用户还停在旧地址上时，自动跟到新的局域网地址。
+            // 只有在「同一台电脑（deviceId 相同）+ 现在确实能连」时才切，
+            // 免得把用户从能用的通道上踢下去。
+            if (moved > 0) {
+                val active = refreshed.firstOrNull { it.id == ui.activeConnId }
+                    ?: refreshed.firstOrNull { it.url == ui.entryUrl }
+                val better = refreshed.firstOrNull { c ->
+                    c.deviceId.isNotBlank() && c.deviceId == active?.deviceId &&
+                        c.url != ui.entryUrl &&
+                        AutoRoute.isLanUrl(c.url) &&
+                        AutoRoute.onWifi(this@MainActivity) &&
+                        statuses[c.url]?.level == ConnectionProbe.Level.Online
+                }
+                if (better != null) {
+                    EventLog.event(
+                        this@MainActivity,
+                        "route",
+                        "address moved; follow ${hostOf(better.url)}",
+                    )
+                    Toast.makeText(
+                        this@MainActivity,
+                        "局域网地址变了，已切到 ${hostOf(better.url)}",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    switchTo(better)
+                }
+            }
         }
     }
 
