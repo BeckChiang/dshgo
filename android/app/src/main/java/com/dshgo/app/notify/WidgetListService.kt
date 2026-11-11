@@ -122,11 +122,15 @@ class SessionFactory(private val ctx: Context) : RemoteViewsService.RemoteViewsF
             val workspace = state.workspace(WidgetStateStore.selectedWorkspaceId(ctx)) ?: return emptyList()
             // 排序：审批 > 运行中 > 置顶 > 一般。运行中永远压在置顶前面 ——
             // 「置顶」表达的是关注度，「运行中」表达的是现在正在发生，后者更该先看到。
+            // 排序也要用「实时运行集合」，不能只看快照 ——
+            // 快照 8 秒才来一次，于是出现过「绿点立刻变亮、但行还在原位」的割裂：
+            // getViewAt 读实时状态、load() 读快照，两处不一致就会这样。
+            val live = SessionWatcher.liveRunningIds()
             return workspace.sessions
                 .map { Row(it, it.pendingApproval) }
                 .sortedWith(
                     compareByDescending<Row> { it.alert }
-                        .thenByDescending { it.session.isRunning }
+                        .thenByDescending { it.session.isRunning || live.contains(it.session.id) }
                         .thenByDescending { it.session.pinned },
                 )
         }

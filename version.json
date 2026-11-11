@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.42",
+  "version": "4.5.0-beck.43",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "小组件摘要剥掉「起/止」标记；隧道恢复后清旧错误提示；探测到隧道不通且无其它 VPN 时自动重建；添加设备返回回列表"
+  "notes": "小组件排序改用实时运行集合，绿点亮起与行上移同时发生"
 }
