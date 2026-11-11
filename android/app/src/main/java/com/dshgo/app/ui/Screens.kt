@@ -473,7 +473,7 @@ fun SetupScreen(
                 }
             }
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
                 "设备与电脑直连，不经过任何中转服务器",
                 style = MaterialTheme.typography.labelSmall,
@@ -553,10 +553,13 @@ private fun Color8(v: Int) = androidx.compose.ui.graphics.Color(0xFF000000.toInt
 internal fun SettingsGroupTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelMedium.copy(
+            fontSize = 11.sp,
+            letterSpacing = 0.8.sp,
+        ),
         color = DshColor.Accent,
         fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+        modifier = Modifier.padding(start = 2.dp, bottom = 4.dp),
     )
 }
 
@@ -581,7 +584,7 @@ private fun WidgetDeviceSection() {
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Text(
                 "会话小组件显示哪台电脑",
                 style = MaterialTheme.typography.bodyMedium,
@@ -1056,13 +1059,11 @@ fun SettingsSheet(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(14.dp))
 
             WidgetDeviceSection()
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(14.dp))
 
             TsTunnelSection()
 
@@ -1482,7 +1483,7 @@ fun ConnectingScreen(host: String, modifier: Modifier = Modifier) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             BrandMark(size = 56)
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(14.dp))
             CircularProgressIndicator(
                 modifier = Modifier.size(28.dp),
                 strokeWidth = 2.5.dp,
@@ -1571,7 +1572,7 @@ fun DshLoadingOverlay(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = onReload, shape = RoundedCornerShape(14.dp)) {
                         Text("重新加载")

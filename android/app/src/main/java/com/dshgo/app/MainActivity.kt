@@ -1420,22 +1420,25 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 handler.post { ui = ui.copy(updateBytes = p.bytes, updateTotal = p.total) }
             }
 
-            // 先镜像，失败再试官方。
-            //
-            // 国内网络下这两个源经常"一个通一个不通"，而用户不该为此做选择 ——
-            // 他点的是"下载并安装"，不是"选一个 CDN"。
+            // ★ 先交给系统下载器：它走手机默认网络（用户开的代理 / VPN 照常生效），
+            //   不受本进程「隧道内 DNS」的影响，还带断点续传 —— 用户反馈的
+            //   「开着 VPN 时 App 内下载一直 0 字节」就是后者导致的。
             var firstError: String? = null
-            runCatching { ApkDownloader.download(this@MainActivity, target, ::report) }
-                .onFailure { firstError = it.message ?: "下载失败" }
+            val sysId = ApkDownloader.enqueueSystem(this@MainActivity, target)
+            if (sysId != null) {
+                runCatching { ApkDownloader.awaitSystem(this@MainActivity, sysId, ::report) }
+                    .onFailure { firstError = it.message ?: "系统下载失败" }
+            } else {
+                firstError = "系统下载器不可用"
+            }
 
-            if (ui.updatePhase == "downloading" && !ApkDownloader.existing(this@MainActivity).let { it != null && it.length() > 0 }) {
-                // 镜像没成，试官方
+            if (ApkDownloader.existing(this@MainActivity)?.length()?.let { it > 0 } != true) {
+                // 系统下载没成：退回自带实现，再试一次同一个地址
                 runCatching {
-                    ApkDownloader.download(this@MainActivity, UpdateCheck.APK_URL, ::report)
+                    ApkDownloader.download(this@MainActivity, target, ::report)
                 }.onFailure {
                     ui = ui.copy(
                         updatePhase = "failed",
-                        // 两个源都失败时把两个原因都给出来 —— 只说一个会让人以为换个源就好了
                         updateError = listOfNotNull(firstError, it.message).joinToString("；"),
                     )
                     return@launch
@@ -2273,7 +2276,10 @@ private fun Shell(
             DshStatusStrip(
                 host = hostOf(state.entryUrl),
                 channel = channelOf(state.entryUrl),
-                live = live,
+                // ★ 绿点表示「这个页面连接是通的」，不是「事件流订阅成功」。
+                //   事件流在部分 DSH 版本上退化成轮询（或干脆没连上），
+                //   以前那样这条状态就一直是灰的 —— 和用户看到的「明明连着」矛盾。
+                live = state.dshReady || live,
                 unseen = unseen,
                 onNotice = onOpenPanel,
                 onReload = onReload,

@@ -4,7 +4,7 @@
 
 Fnh Go 是 [xiazhi88/dshgo](https://github.com/xiazhi88/dshgo)（MIT）的社区分支（fork）。上游提供了「把只监听 `127.0.0.1` 的 `dsh web` 反代到局域网 + Android App」的完整底座；本分支在它之上重做了连接与设备管理、内嵌了 Tailscale 隧道、补齐了深色模式与图标体系。
 
-当前版本：**App `4.5.0-beck.35`（versionCode 78）**、**插件 `2.0.5`**。
+当前版本：**App `4.5.0-beck.36`（versionCode 79）**、**插件 `2.0.5`**。
 
 ## 与上游的差别
 
@@ -81,10 +81,11 @@ node --test test/proxy.test.mjs
 node --test test/version.test.mjs
 ```
 
-App 侧真机清单见 `work/` 下的 `TEST-CHECKLIST-beck.35.md`（随每次发版更新）。
+App 侧真机清单见 `work/` 下的 `TEST-CHECKLIST-beck.36.md`（随每次发版更新）。
 
 ## 更新记录
 
+- `beck.36`：应用内更新改用系统 `DownloadManager`（走手机默认网络，第三方 VPN/代理照常生效，断点续传），解决「开着 VPN 时 App 内下载停在 0 字节」；顶部绿点改为按页面连接状态显示；设置页收紧分组间距（去掉重复的 20+22 双层间隔）并统一字号层级。
 - `beck.35`：设备页按返回直接退出 App（不再与 DSH 来回跳）；进设备 4 秒没首帧自动补一次导航；设置里「小组件」按设备归并通道，小组件取数失败会自动换另一条通道重试；`establish()` 返回 null 时日志点明「可能已有系统 VPN」。
 - `beck.34`：更新检查再补一处 —— jsDelivr 的 tags 列表返回的是不带前导 v 的 `4.5.0-beck.N`，这种写法现在也认（此时 GitHub API 不通也能查到版本）。
 - `beck.33`：修「检查不到更新」——`tagToVersion` 之前把 `v4.5.0-beck.33` 截成 `4.5.0`，导致永远判定为最新；更新区新增「在浏览器打开 GitHub 更新页」兜底；设置重排为连接 / 界面 / 通知 / 小组件 / 网络 / 安全 / 诊断 / 更新 / 重置，清除登录与缓存移到底部「重置」组并二次确认。

@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.35",
+  "version": "4.5.0-beck.36",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "设备页返回键直接退出；进设备首帧慢时自动补一次导航（不再需要点两下/重新连接）；设置里小组件按设备归并（同一台电脑不再显示两条），小组件失败会自动换另一条通道重试"
+  "notes": "应用内更新改走系统下载器（走手机默认网络，开 VPN 也能下，带断点续传）；DSH 顶部绿点按页面连接显示，不再因事件流退化变灰；设置页收紧间距与字号层级"
 }

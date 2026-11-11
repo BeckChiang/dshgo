@@ -1,7 +1,10 @@
 package com.dshgo.app.data
 
+import android.app.DownloadManager
 import android.content.Context
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -111,5 +114,78 @@ object ApkDownloader {
             }
         }
         out
+    }
+
+    // ── 系统下载器（DownloadManager）────────────────────────────────────────────
+    //
+    // 为什么要交给系统：App 自己的 OkHttp 请求走的是**本进程**的网络栈。
+    // 这个 App 是内嵌 Tailscale 的「允许应用」，DNS 会被指到隧道内的 100.100.100.100 ——
+    // 隧道抖动时解析 GitHub 就会长时间没响应，界面表现为「一直在下载、0 字节」。
+    // 系统下载器不在这个名单里，走手机默认网络（用户开的代理 / VPN 也照常生效），
+    // 还自带断点续传与通知栏进度，比我们守着一条连接稳。
+
+    private const val SYS_DIR = "update"
+
+    /** 外部文件目录里的落点 —— DownloadManager 只接受自己能写的路径。 */
+    private fun sysTarget(ctx: Context): File =
+        File(File(ctx.getExternalFilesDir(null), SYS_DIR).apply { mkdirs() }, NAME)
+
+    /**
+     * 交给系统下载，返回任务 id；拿不到 DownloadManager 时返回 null（调用方回退到自带实现）。
+     */
+    fun enqueueSystem(ctx: Context, url: String): Long? {
+        val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return null
+        val dest = sysTarget(ctx)
+        runCatching { dest.delete() }
+        val req = DownloadManager.Request(Uri.parse(url))
+            .setTitle("Fnh Go 更新包")
+            .setMimeType("application/vnd.android.package-archive")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(true)
+            .setDestinationUri(Uri.fromFile(dest))
+        return runCatching { dm.enqueue(req) }.getOrNull()
+    }
+
+    /**
+     * 等系统下载结束，成功后把文件挪到 [targetFile] 供安装器使用。
+     */
+    suspend fun awaitSystem(
+        ctx: Context,
+        id: Long,
+        onProgress: (Progress) -> Unit,
+    ): File = withContext(Dispatchers.IO) {
+        val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+            ?: error("系统没有下载服务")
+        val query = DownloadManager.Query().setFilterById(id)
+        val deadline = System.currentTimeMillis() + 20 * 60 * 1000
+        while (true) {
+            dm.query(query)?.use { c ->
+                if (!c.moveToFirst()) error("系统下载任务不见了")
+                val status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                val done = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                val total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                onProgress(Progress(done.coerceAtLeast(0), total.coerceAtLeast(0)))
+                when (status) {
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        val src = sysTarget(ctx)
+                        if (!src.exists() || src.length() <= 0) error("系统下载完成但没有文件")
+                        val out = targetFile(ctx)
+                        runCatching { out.delete() }
+                        src.copyTo(out, overwrite = true)
+                        runCatching { src.delete() }
+                        return@withContext out
+                    }
+                    DownloadManager.STATUS_FAILED -> {
+                        val reason = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                        error("系统下载失败（reason $reason）")
+                    }
+                }
+            } ?: error("查不到下载进度")
+            if (System.currentTimeMillis() > deadline) error("系统下载超时")
+            delay(400)
+        }
+        @Suppress("UNREACHABLE_CODE")
+        error("unreachable")
     }
 }
