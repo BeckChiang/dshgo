@@ -902,6 +902,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** @param url 来自连接页的输入；为 null 表示沿用已保存的地址。 */
     private fun connect(url: String?) {
+        // 已经在同一条地址上、页面也出来了：不要再走一遍握手+导航。
+        // 换路回调、自动重连、点卡片命中的「其实还是同一条」都会走到这里，
+        // 以前每次都 `loadUrl` —— 用户看到的就是「页面明明出来了又自己刷一次」。
+        val same = url?.let { Prefs.normalize(it) }.orEmpty()
+        if (same.isNotEmpty() && same == prefs.entryUrl() &&
+            loaded && ui.screen == Screen.Dsh && ui.dshReady
+        ) {
+            EventLog.event(this, "route", "connect skipped: already on ${hostOf(same)}")
+            return
+        }
+
         // 连上就把这条地址收进列表 —— 别让首页空着（见 ConnectionStore.ensure）
         url?.let { ConnectionStore.ensure(this, it) }
         if (url != null) {
