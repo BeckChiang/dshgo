@@ -94,6 +94,7 @@ class WatchService : Service() {
                 runCatching { TsTunnel.ensureTunnel(this@WatchService) }
                 // 常驻通知可能被「清除全部」或系统清理掉，但服务还活着 —— 补回去。
                 runCatching { reassertForeground(host) }
+                runCatching { WidgetRefresher.tick(this@WatchService) }
                 if (++tick % 4 == 0) {
                     runCatching { WidgetRefresher.refresh(this@WatchService) }
                 }

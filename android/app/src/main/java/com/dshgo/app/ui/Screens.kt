@@ -2591,6 +2591,12 @@ private fun DeviceDialog(
 ) {
     val first = rows.firstOrNull() ?: return
     var name by remember { mutableStateOf(first.name) }
+    // 「获取电脑端局域网地址」：用户要能确认「我们到底有没有去问过电脑」。
+    // 以前地址只在后台 reconcile 时静默更新，出问题时完全看不出是没问、还是问到了没用上。
+    val scope = rememberCoroutineScope()
+    var lanBusy by remember { mutableStateOf(false) }
+    var lanFetched by remember { mutableStateOf<String?>(null) }
+    var lanNote by remember { mutableStateOf("") }
     // 每条通道的地址都可改：换路由器、换端口不用删了重加。
     val urls = remember(rows) {
         mutableStateMapOf<String, String>().apply { rows.forEach { put(it.id, it.url) } }
@@ -2685,6 +2691,55 @@ private fun DeviceDialog(
                         }
                     }
                     Spacer(Modifier.height(10.dp))
+                }
+
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        val probeUrl = rows.firstOrNull {
+                            statuses[it.url]?.level != ConnectionProbe.Level.Offline
+                        }?.url ?: rows.first().url
+                        lanBusy = true
+                        lanNote = "正在问 ${probeUrl.substringAfter("//").substringBefore("/")} …"
+                        scope.launch {
+                            val cookie = runCatching {
+                                android.webkit.CookieManager.getInstance().getCookie(probeUrl)
+                            }.getOrNull()
+                            val st = runCatching { ConnectionProbe.probe(probeUrl, cookie) }.getOrNull()
+                            lanBusy = false
+                            val lan = st?.lanUrls?.firstOrNull()
+                            lanFetched = lan
+                            lanNote = when {
+                                st == null -> "问不到：请求失败"
+                                lan != null -> "电脑当前局域网地址：$lan"
+                                st.locked -> "电脑回了「需要解锁」，拿不到地址列表"
+                                st.lanUrls.isEmpty() -> "电脑在线，但没上报局域网地址"
+                                else -> "电脑在线，但没有可用的局域网地址"
+                            }
+                        }
+                    },
+                    enabled = !lanBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text(if (lanBusy) "正在获取…" else "获取电脑端局域网地址")
+                }
+                if (lanNote.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        lanNote,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (lanFetched != null) DshColor.Running
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val lanRow = rows.firstOrNull { channelLabel(it.url) == "局域网" }
+                if (lanFetched != null && lanRow != null && urls[lanRow.id] != lanFetched) {
+                    Spacer(Modifier.height(6.dp))
+                    TextButton(
+                        onClick = { urls[lanRow.id] = lanFetched!! },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("用这个地址替换列表里的局域网地址") }
                 }
 
                 OutlinedTextField(

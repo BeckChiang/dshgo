@@ -121,6 +121,31 @@ object WidgetRefresher {
     }
 
     /**
+     * 看门狗：防止小组件永久停在「检查中…」。
+     *
+     * 两个坑叠在一起才会永久停住：
+     * 1) 隧道抖动时一次拉取可能挂很久，`inFlight` 一直活着；
+     * 2) 只有「拉取结束」才会重绘，而它不结束就永远不重绘，于是底栏一直显示开始那一刻的
+     *    「检查中…」——即便 [statusText] 早就能给出「超时」也不会自己刷。
+     * 所以这里做两件事：超过 20 s 在飞就放弃，并且每一拍都重绘一次。
+     */
+    fun tick(ctx: Context) {
+        val app = ctx.applicationContext
+        val flying = inFlight?.isActive == true
+        if (flying && System.currentTimeMillis() - lastStartAt > 20_000L) {
+            runCatching { inFlight?.cancel() }
+            synchronized(this) {
+                inFlight = null
+                pending = false
+            }
+            lastOutcome = Outcome.Offline
+            lastError = "超时"
+        }
+        DshWidgetProvider.update(app, SessionWatcher.summary.value)
+        ScheduleWidgetProvider.update(app)
+    }
+
+    /**
      * 拉一次快照并重绘所有小组件实例。
      *
      * @param force true 时跳过节流（用户点了工作区胶囊，必须立刻看到结果）。
@@ -139,6 +164,9 @@ object WidgetRefresher {
                 // 丢掉请求就等于丢掉一次状态变化（用户看到「在跑 1 个」但行还是旧的）。
                 // 记下来，等这一轮结束后补一次；force 的请求不排队（本来就是为了立刻看）。
                 if (inFlight?.isActive == true) pending = true
+                // 被节流也要重绘一次：statusText() 会随时间从「检查中」变「超时」，
+                // 不重绘就停在旧字上（用户 21:42 截图就是这个）。
+                DshWidgetProvider.update(app, SessionWatcher.summary.value)
                 return
             }
             lastStartAt = now
