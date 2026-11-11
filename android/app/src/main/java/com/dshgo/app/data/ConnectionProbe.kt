@@ -102,18 +102,25 @@ object ConnectionProbe {
      *
      * 并发而不是串行：五条连接串行各等 2.5 秒就是 12 秒，列表转半天。
      */
-    suspend fun probeAll(connections: List<Connection>): Map<String, Status> =
+    suspend fun probeAll(
+        connections: List<Connection>,
+        /** 这条地址在 WebView 里已有的 Cookie（主要是 30 天有效的解锁凭据）。 */
+        cookieFor: (String) -> String? = { null },
+    ): Map<String, Status> =
         withContext(Dispatchers.IO) {
-            connections.map { c -> async { c.url to probe(c.url) } }
+            connections.map { c -> async { c.url to probe(c.url, cookieFor(c.url)) } }
                 .awaitAll()
                 .toMap()
         }
 
-    suspend fun probe(url: String): Status = withContext(Dispatchers.IO) {
+    suspend fun probe(url: String, cookie: String? = null): Status = withContext(Dispatchers.IO) {
         val base = url.trimEnd('/')
         val started = System.currentTimeMillis()
 
-        val info = runCatching { getJson("$base/__dshgo__/info") }
+        // 带上解锁 Cookie 再探：手机里已经有 30 天的解锁凭据时，
+        // /info 会正常返回 200 —— 列表就不该再写「需要密码登录」。
+        // 以前这里裸探，于是「点进去直接能开」与「列表说要密码」长期自相矛盾。
+        val info = runCatching { getJson("$base/__dshgo__/info", cookie) }
             .getOrElse { t ->
                 // 开了访问密码时，非导航请求一律 401 —— 那是「这台电脑在线，只是要密码」，
                 // 不是「连不上」。以前这里直接判 offline 并把 HTTP 401 标红，把人劝退了。
@@ -177,9 +184,11 @@ object ConnectionProbe {
     /** 非 2xx 的响应。带上状态码与已解析的 body —— 401 里也有东西要看。 */
     private class HttpError(val code: Int, val json: JSONObject?) : Exception("HTTP $code")
 
-    private fun getJson(url: String): JSONObject {
+    private fun getJson(url: String, cookie: String? = null): JSONObject {
         val parsed = url.toHttpUrlOrNull() ?: error("地址格式不对")
-        val req = Request.Builder().url(parsed).header("Accept", "application/json").build()
+        val builder = Request.Builder().url(parsed).header("Accept", "application/json")
+        if (!cookie.isNullOrBlank()) builder.header("Cookie", cookie)
+        val req = builder.build()
         client.newCall(req).execute().use { resp ->
             val text = resp.body?.string().orEmpty()
             val json = runCatching { JSONObject(text) }.getOrNull()

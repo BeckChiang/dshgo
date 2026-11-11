@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.43",
+  "version": "4.5.0-beck.44",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "小组件排序改用实时运行集合，绿点亮起与行上移同时发生"
+  "notes": "探测带上解锁 Cookie：已解锁的电脑不再显示「需要密码登录」"
 }

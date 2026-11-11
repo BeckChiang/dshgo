@@ -4,7 +4,7 @@
 
 Fnh Go 是 [xiazhi88/dshgo](https://github.com/xiazhi88/dshgo)（MIT）的社区分支（fork）。上游提供了「把只监听 `127.0.0.1` 的 `dsh web` 反代到局域网 + Android App」的完整底座；本分支在它之上重做了连接与设备管理、内嵌了 Tailscale 隧道、补齐了深色模式与图标体系。
 
-当前版本：**App `4.5.0-beck.43`（versionCode 82）**、**插件 `2.0.5`**。
+当前版本：**App `4.5.0-beck.44`（versionCode 82）**、**插件 `2.0.5`**。
 
 ## 与上游的差别
 

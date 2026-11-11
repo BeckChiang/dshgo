@@ -1606,7 +1606,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         if (list.isEmpty()) return
         ui = ui.copy(probing = true)
         lifecycleScope.launch {
-            val statuses = runCatching { ConnectionProbe.probeAll(list) }.getOrDefault(emptyMap())
+            // 把 WebView 里已有的 Cookie 带上再探：已经解锁过的电脑会直接回 200，
+            // 列表就显示「可以连接 · 在线」，而不是写着「需要密码登录」、点进去却能直开。
+            val cm = CookieManager.getInstance()
+            val statuses = runCatching {
+                ConnectionProbe.probeAll(list) { url -> runCatching { cm.getCookie(url) }.getOrNull() }
+            }.getOrDefault(emptyMap())
             // 电脑换了 Wi-Fi / 路由器换了网段 → 局域网地址会变。
             // 原地改地址，而不是让列表里多出一台「新设备」。
             // 记住这次探到的设备身份：出门时局域网那条探不到，靠它才能和 Tailscale
