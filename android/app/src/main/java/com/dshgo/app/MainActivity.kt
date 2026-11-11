@@ -2465,6 +2465,7 @@ private fun Shell(
                 onInstall = onInstall,
                 onDownload = onDownload,
                 currentVersion = BuildConfig.VERSION_NAME,
+                pluginVersion = state.connStatuses[state.entryUrl]?.version,
                 onDismiss = onCloseSettings,
             )
         }

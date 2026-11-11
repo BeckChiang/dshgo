@@ -687,6 +687,8 @@ fun SettingsSheet(
     onNotifySettings: () -> Unit,
     /** 本机版本号（BuildConfig.VERSION_NAME）。 */
     currentVersion: String,
+    /** 电脑端插件版本（插件自己的 semver，和 App 版本无关）；null = 还没探到。 */
+    pluginVersion: String?,
     /** 远端最新版本号；null = 还不知道。 */
     updateLatest: String?,
     /** 远端是否比本机新。 */
@@ -1161,6 +1163,14 @@ fun SettingsSheet(
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 if (updateChecking) "正在检查…" else "当前 $currentVersion",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            // 插件与 App 各自编号，这里直接把插件读到的那份写出来，
+                            // 免得「到底装的是哪个插件版本」要靠猜。
+                            Text(
+                                "电脑端插件 ${pluginVersion?.ifBlank { null } ?: "未探到"}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
