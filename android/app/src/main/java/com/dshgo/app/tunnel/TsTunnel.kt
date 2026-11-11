@@ -1,6 +1,7 @@
 package com.dshgo.app.tunnel
 
 import android.content.Context
+import com.dsh.remote.Prefs
 import android.content.Intent
 import android.net.VpnService
 import android.util.Log
@@ -22,12 +23,17 @@ object TsTunnel {
 
     /** 「用户想要隧道」的持久标记。引擎状态不等于隧道状态，重建靠它判断该不该动手。 */
     private const val PREF_WANT = "ts_want"
+    private const val PREF_REBUILD = "ts_last_rebuild"
 
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences("dshgo_tunnel", Context.MODE_PRIVATE)
 
     /** 用户开过隧道、且没关过。只有它为 true，看门狗才允许重建。 */
     fun wantsTunnel(ctx: Context): Boolean = prefs(ctx).getBoolean(PREF_WANT, false)
+
+    /** 上一次建隧道失败的原因（由 TailscaleVpnService.TsBuilder.establish 写入，成功后自动清空）。 */
+    fun lastError(ctx: Context): String =
+        runCatching { Prefs.get(ctx).getString("ts_error", "").orEmpty() }.getOrDefault("")
 
     private fun setWants(ctx: Context, on: Boolean) =
         prefs(ctx).edit().putBoolean(PREF_WANT, on).apply()
@@ -79,10 +85,17 @@ object TsTunnel {
      * 这时候去 start 会把一个没登录过的引擎拉起来，白白耗电。
      */
     fun ensureTunnel(ctx: Context): Boolean {
-        if (!wantsTunnel(ctx)) return false
-        if (tunUp()) return false
+        val want = wantsTunnel(ctx)
+        if (!want) return false
+        if (runCatching { tunUp() }.getOrDefault(false)) return false
+        // 不能拿「引擎状态」当门槛：VpnService 被系统单独回收时引擎往往还活着，
+        // 状态甚至是 Running —— 旧逻辑正是因此在 Running 下拒绝重建，隧道一死就一直死。
+        // 现在只要「想连 + 没有 tun」就重建，只做 30 s 节流，避免和自身的启动流程抢。
+        val now = System.currentTimeMillis()
+        val last = prefs(ctx).getLong(PREF_REBUILD, 0L)
+        if (now - last < 30_000L) return false
+        prefs(ctx).edit().putLong(PREF_REBUILD, now).apply()
         val st = state(ctx)
-        if (!st.equals("Running", true) && !st.equals("Starting", true)) return false
         com.dshgo.app.data.EventLog.event(ctx, "tunnel", "rebuild: tun missing, state=$st")
         start(ctx)
         return true
@@ -113,10 +126,11 @@ object TsTunnel {
         com.dshgo.app.data.EventLog.event(ctx, "tunnel", "start requested")
         val intent = Intent(ctx, TailscaleVpnService::class.java)
             .setAction(TailscaleVpnService.ACTION_START)
-        runCatching { ContextCompat.startForegroundService(ctx, intent) }
-            .onFailure {
-                com.dshgo.app.data.EventLog.event(ctx, "tunnel", "start failed: ${it.javaClass.simpleName}")
-            }
+        val started = runCatching { ContextCompat.startForegroundService(ctx, intent) }
+        val err = started.exceptionOrNull()
+        if (err != null) {
+            com.dshgo.app.data.EventLog.event(ctx, "tunnel", "start failed: ${err.javaClass.simpleName}")
+        }
     }
 
     /** 只把引擎拉起来（登录期间不建隧道，控制通道靠前台保活）。 */

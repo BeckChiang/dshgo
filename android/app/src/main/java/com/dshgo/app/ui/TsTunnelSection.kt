@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dshgo.app.tunnel.TsTunnel
+import com.dshgo.app.ui.theme.DshColor
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 
@@ -71,10 +72,13 @@ fun TsTunnelSection() {
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(2.dp))
+                    val tsError = com.dshgo.app.tunnel.TsTunnel.lastError(ctx)
                     Text(
-                        "隧道只接入本应用，不影响其它 App；与系统 Tailscale 不能同时开。",
+                        if (tsError.isNotBlank()) tsError + "（点「管理」重新授权）"
+                        else "隧道只接入本应用，不影响其它 App；与系统 Tailscale 不能同时开。",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (tsError.isNotBlank()) DshColor.Danger
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 TextButton(onClick = {

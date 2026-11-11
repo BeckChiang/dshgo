@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import androidx.core.app.NotificationManagerCompat
 import com.dshgo.app.notify.NotificationCenter
 import com.dshgo.app.notify.SessionWatcher
 import com.dshgo.app.notify.WidgetRefresher
@@ -75,15 +76,40 @@ class WatchService : Service() {
         // 顺带每 4 拍（约 1 分钟）催一次小组件刷新：桌面小组件的系统周期更新
         // 是 0（见 widget_info.xml），不催的话它只会停在放上去那一刻的数据上，
         // 换网之后就一直写「未连接」。
+        // 网络一变就让小组件重新取数：系统周期更新是 0，光靠下面的节拍会一直停在旧数据上。
+        runCatching {
+            val cm = getSystemService(android.net.ConnectivityManager::class.java)
+            cm?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    com.dshgo.app.data.EventLog.event(this@WatchService, "net", "default network changed")
+                    runCatching { WidgetRefresher.refresh(this@WatchService, force = true) }
+                }
+            })
+        }
+
         scope.launch {
             var tick = 0
             while (isActive) {
                 delay(15_000)
                 runCatching { TsTunnel.ensureTunnel(this@WatchService) }
+                // 常驻通知可能被「清除全部」或系统清理掉，但服务还活着 —— 补回去。
+                runCatching { reassertForeground(host) }
                 if (++tick % 4 == 0) {
                     runCatching { WidgetRefresher.refresh(this@WatchService) }
                 }
             }
+        }
+    }
+
+    /** 常驻通知不在通知栏里就重新贴一条（同 id 原地更新，不会重复）。 */
+    private fun reassertForeground(host: String) {
+        val live = runCatching {
+            NotificationManagerCompat.from(this).activeNotifications.any { it.id == NOTIF_ID }
+        }.getOrDefault(true)
+        if (live) return
+        runCatching {
+            startForeground(NOTIF_ID, NotificationCenter.foreground(this, host, SessionWatcher.summary.value))
+            com.dshgo.app.data.EventLog.event(this, "notify", "foreground notification restored")
         }
     }
 

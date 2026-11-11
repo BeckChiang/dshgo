@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dsh.remote.Tunnel
+import com.dshgo.app.ui.theme.DshColor
 import com.dshgo.app.ui.theme.DshTheme
 import com.dshgo.app.data.CrashCenter
 import com.dshgo.app.data.EventLog
@@ -193,6 +194,11 @@ private fun TunnelScreen(
                         if (tunUp) "隧道：已建立" else "隧道：未建立",
                         fontSize = 13.sp,
                     )
+                    val tsError = TsTunnel.lastError(ctx)
+                    if (!tunUp && tsError.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(tsError, fontSize = 12.sp, color = DshColor.Danger)
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text("本机地址：${address.ifBlank { "尚未分配" }}", fontSize = 12.sp)
                     if (loginUrl.isNotBlank()) {

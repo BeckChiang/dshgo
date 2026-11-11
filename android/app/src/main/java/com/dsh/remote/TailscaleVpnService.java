@@ -210,7 +210,7 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
                 EventLog.event(this, "vpn", "allowed app lookup failed; establish blocked");
                 android.util.Log.e("DSHVPN-JAVA", "newBuilder: allowed app missing, establish blocked", e);
             }
-            TsBuilder ts = new TsBuilder(builder);
+            TsBuilder ts = new TsBuilder(builder, this);
             keepAndroidBuilder = builder;
             keepGoBuilder = ts;
             return ts;
@@ -221,7 +221,7 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
             EventLog.event(this, "vpn", "newBuilder degraded: " + t.getClass().getSimpleName());
             Builder fallback = builder != null ? builder
                 : new Builder().addDnsServer("100.100.100.100");
-            TsBuilder ts = new TsBuilder(fallback);
+            TsBuilder ts = new TsBuilder(fallback, this);
             keepAndroidBuilder = fallback;
             keepGoBuilder = ts;
             return ts;
@@ -318,11 +318,15 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
     }
 
     /** Wraps android's VpnService.Builder for the Go engine. */
+    public static final String TS_ERROR = "ts_error";
+
     static final class TsBuilder implements libtailscale.VPNServiceBuilder {
         private final VpnService.Builder b;
+        private final android.content.Context ctx;
 
-        TsBuilder(VpnService.Builder b) {
+        TsBuilder(VpnService.Builder b, android.content.Context ctx) {
             this.b = b;
+            this.ctx = ctx;
         }
 
         @Override public void setMTU(int mtu) { b.setMtu(mtu); }
@@ -341,6 +345,7 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
         @Override public libtailscale.ParcelFileDescriptor establish() throws Exception {
             if (blockEstablish) {
                 android.util.Log.e("DSHVPN-JAVA", "establish blocked: no allowed application");
+                Prefs.get(ctx).edit().putString(TS_ERROR, "建立失败：没有可用的应用名单").apply();
                 return null;
             }
             final ParcelFileDescriptor fd = b.establish();
@@ -350,8 +355,11 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
                 // 后者是用户反馈「开了 VPN 就建不起隧道」的根因，日志里写清楚便于排查。
                 android.util.Log.e("DSHVPN-JAVA",
                         "establish returned null: another VPN may be active (Android allows only one)");
+                Prefs.get(ctx).edit().putString(TS_ERROR,
+                        "隧道建不起来：手机已有别的 VPN 在跑（系统只允许同时一条），或授权被撤销").apply();
+                return null;
             }
-            if (fd == null) return null;
+            Prefs.get(ctx).edit().remove(TS_ERROR).apply();
             return new libtailscale.ParcelFileDescriptor() {
                 @Override public int detach() throws Exception {
                     return fd.detachFd();

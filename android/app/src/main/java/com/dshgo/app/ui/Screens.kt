@@ -2375,20 +2375,27 @@ private fun channelLabel(url: String): String {
  * 「能用」= 探测没过 Offline（能连、要密码、转发层没就绪都算能用，
  * 因为这些都能靠重连/输密码解决，只有 TCP 不通才是真的没网）。
  */
+/** 列表里该显示的那条通道，以及它现在是不是「断联」。 */
+private data class RowPick(val conn: Connection, val dead: Boolean)
+
 private fun visibleRow(
     rows: List<Connection>,
     statuses: Map<String, ConnectionProbe.Status>,
     activeId: String?,
     onWifi: Boolean,
-): Connection {
+): RowPick {
     fun usable(c: Connection) = statuses[c.url]?.let { it.level != ConnectionProbe.Level.Offline } ?: false
     val lan = rows.firstOrNull { channelLabel(it.url) == "局域网" }
     val tail = rows.firstOrNull { channelLabel(it.url) == "Tailscale" }
-    val ordered = if (onWifi) listOfNotNull(lan, tail) else listOfNotNull(tail, lan)
-    return ordered.firstOrNull(::usable)
-        ?: rows.firstOrNull { it.id == activeId }
-        ?: ordered.firstOrNull()
-        ?: rows.first()
+    val usableRows = listOfNotNull(lan, tail).filter(::usable)
+    // 规则（用户定的）：两条都不可用 → 不露地址，只写「断联」；
+    // 一条可用 → 只显示它；两条都可用 → 优先局域网（同一个 Wi-Fi 下最快）。
+    val pick = when {
+        usableRows.size == 1 -> usableRows.first()
+        usableRows.size > 1 -> lan ?: usableRows.first()
+        else -> rows.firstOrNull { it.id == activeId } ?: lan ?: tail ?: rows.first()
+    }
+    return RowPick(pick, dead = !usable(pick))
 }
 
 /** 状态一句话 —— 列表里的每条通道共用这一份，不再各写一遍。 */private fun statusLine(status: ConnectionProbe.Status?, probing: Boolean): String = when {
@@ -2483,13 +2490,14 @@ private fun DeviceCard(
             //   都不可用时显示一行「断联」，点它仍然按上次成功的那条重试。
             val ctx = androidx.compose.ui.platform.LocalContext.current
             val onWifi = androidx.compose.runtime.remember(ctx) { com.dshgo.app.data.AutoRoute.onWifi(ctx) }
-            val visible = visibleRow(group.rows, statuses, activeId, onWifi)
+            val pick = visibleRow(group.rows, statuses, activeId, onWifi)
+            val visible = pick.conn
             ChannelRow(
                 conn = visible,
                 status = statuses[visible.url],
                 active = visible.id == activeId,
                 probing = probing && statuses[visible.url] == null,
-                dead = statuses[visible.url]?.level == ConnectionProbe.Level.Offline,
+                dead = pick.dead,
                 onClick = { onEnter(visible) },
             )
             Spacer(Modifier.height(6.dp))
@@ -2540,7 +2548,8 @@ private fun ChannelRow(
             }
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
-                Text(
+                // 断联时连地址都不摆出来：摆出来只会让人以为「点这个能通」。
+                if (!dead) Text(
                     conn.url.removePrefix("http://"),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface,

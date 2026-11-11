@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.36",
+  "version": "4.5.0-beck.37",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "应用内更新改走系统下载器（走手机默认网络，开 VPN 也能下，带断点续传）；DSH 顶部绿点按页面连接显示，不再因事件流退化变灰；设置页收紧间距与字号层级"
+  "notes": "隧道看门狗不再看引擎状态（服务被杀也能拉起）；建不起来时界面直说原因（别的 VPN 占用/授权被撤销）；小组件跟随网络切换；常驻通知被清后自动补回；设备列表只显示当前该用的那条通道"
 }
