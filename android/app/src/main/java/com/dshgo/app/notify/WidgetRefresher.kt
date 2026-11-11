@@ -2,6 +2,7 @@ package com.dshgo.app.notify
 
 import android.content.Context
 import com.dshgo.app.Prefs
+import com.dshgo.app.data.WidgetDevice
 import com.dshgo.app.data.WidgetStateClient
 import com.dshgo.app.data.WidgetStateStore
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +43,16 @@ object WidgetRefresher {
         private set
 
     /**
+     * 最近一次失败的原因（截断到 40 字）。
+     *
+     * 为什么留这个：光写「未连接」无法区分「电脑没开」「地址过期」「插件没起」，
+     * 用户只能靠猜；具体原因写进底栏，一眼就知道该去修哪一端。
+     */
+    @Volatile
+    var lastError: String = ""
+        private set
+
+    /**
      * 给小组件底部用的一行状态。
      *
      * 为什么需要它：拉取失败时小组件会保留上一次的缓存 —— 看起来「通知里 3 个在跑，
@@ -52,7 +63,8 @@ object WidgetRefresher {
         val base = when (lastOutcome) {
             Outcome.Ok -> ""
             Outcome.Locked -> "需要解锁"
-            Outcome.Offline -> "未连接"
+            // 失败时把原因带上：光一个「未连接」看不出是哪一端的问题。
+            Outcome.Offline -> if (lastError.isNotBlank()) "未连接 · $lastError" else "未连接"
             Outcome.Unknown -> "尚未刷新"
         }
         return if (lastOkAt > 0) {
@@ -70,8 +82,9 @@ object WidgetRefresher {
     fun refresh(ctx: Context, force: Boolean = false) {
         val app = ctx.applicationContext
         // 没配入口地址就没有可拉的东西：别发请求，直接留着降级文案。
-        if (Prefs(app).entryUrl().isBlank()) {
+        if (WidgetDevice.url(app).isBlank()) {
             lastOutcome = Outcome.Offline
+            lastError = "未配置地址"
             return
         }
         synchronized(this) {
@@ -83,12 +96,17 @@ object WidgetRefresher {
                     is WidgetStateClient.Result.Ok -> {
                         WidgetStateStore.save(app, r.raw)
                         lastOutcome = Outcome.Ok
+                        lastError = ""
                         lastOkAt = System.currentTimeMillis()
                     }
-                    WidgetStateClient.Result.Locked -> lastOutcome = Outcome.Locked
+                    WidgetStateClient.Result.Locked -> {
+                        lastOutcome = Outcome.Locked
+                        lastError = "需要解锁"
+                    }
                     is WidgetStateClient.Result.Failed -> {
                         // 失败不删缓存：上一次的数据比「未连接」有用得多。
                         lastOutcome = Outcome.Offline
+                        lastError = r.message.take(40)
                     }
                 }
                 // 无论成败都重绘：成功换新数据，失败退回缓存/降级文案。

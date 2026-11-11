@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import com.dshgo.app.notify.NotificationCenter
 import com.dshgo.app.notify.SessionWatcher
+import com.dshgo.app.notify.WidgetRefresher
 import com.dshgo.app.tunnel.TsTunnel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,10 +71,18 @@ class WatchService : Service() {
         // 隧道看门狗：VpnService 会因为切网络、省电、系统回收而单独死掉，
         // 而后端引擎还活着 —— 表现就是界面说「已连接」、地址却一个也连不上。
         // 这个进程本来就是常驻的，借它每 15 秒体检一次，缺了就重建。
+        //
+        // 顺带每 4 拍（约 1 分钟）催一次小组件刷新：桌面小组件的系统周期更新
+        // 是 0（见 widget_info.xml），不催的话它只会停在放上去那一刻的数据上，
+        // 换网之后就一直写「未连接」。
         scope.launch {
+            var tick = 0
             while (isActive) {
                 delay(15_000)
                 runCatching { TsTunnel.ensureTunnel(this@WatchService) }
+                if (++tick % 4 == 0) {
+                    runCatching { WidgetRefresher.refresh(this@WatchService) }
+                }
             }
         }
     }

@@ -49,8 +49,10 @@ object WidgetStateClient {
     }
 
     suspend fun fetch(ctx: Context): Result = withContext(Dispatchers.IO) {
-        val base = Prefs(ctx).entryUrl().trim().trimEnd('/')
-        if (base.isEmpty()) return@withContext Result.Failed("未配置入口地址")
+        // 地址不是「入口地址」那么简单：小组件可能在后台、App 没打开过、
+        // 用户又刚切过网络 —— 交给 WidgetDevice 按「选定设备 + 当前网络」算。
+        val base = WidgetDevice.url(ctx)
+        if (base.isBlank()) return@withContext Result.Failed("未配置入口地址")
 
         try {
             var (code, body) = get("$base$PATH?sessions=$SESSION_LIMIT")

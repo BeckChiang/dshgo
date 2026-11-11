@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.31",
+  "version": "4.5.0-beck.32",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "首屏不等探测；已有解锁 Cookie 时直连跳过锁页；更新地址指向 GitHub Releases 最新包"
+  "notes": "小组件按当前网络选通道、支持在设置里固定看哪台电脑；小组件底栏显示失败原因；后台每分钟催一次刷新"
 }

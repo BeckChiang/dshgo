@@ -14,6 +14,9 @@ import com.dshgo.app.data.displayName
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.rememberCoroutineScope
 import com.dshgo.app.data.ConnectionProbe
+import com.dshgo.app.data.ConnectionStore
+import com.dshgo.app.data.WidgetDevice
+import com.dshgo.app.notify.WidgetRefresher
 import kotlinx.coroutines.launch
 import com.dshgo.app.data.Connection
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -557,6 +560,99 @@ internal fun SettingsGroupTitle(text: String) {
     )
 }
 
+/**
+ * 小组件看哪台电脑。
+ *
+ * 为什么放在设置里而不是小组件上：RemoteViews 里没法放列表，多选一项就得
+ * 开一个 Activity；而「这块图标看谁的会话」本来就是一次性决定，放设置里
+ * 点两下定下来更省事。选完立刻强制刷一次，小组件会马上换数据。
+ */
+@Composable
+private fun WidgetDeviceSection() {
+    val context = LocalContext.current
+    val connections = remember { ConnectionStore.all(context) }
+    var picked by remember { mutableStateOf(Prefs(context).widgetDeviceId()) }
+    val resolved = WidgetDevice.url(context)
+
+    SettingsGroupTitle("小组件")
+    Spacer(Modifier.height(8.dp))
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(
+                "会话小组件显示哪台电脑",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "现在用的是 ${if (resolved.isBlank()) "（还没配地址）" else resolved.removePrefix("http://").removePrefix("https://")}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+
+            WidgetDeviceChoice(
+                label = "跟随当前连接",
+                selected = picked.isBlank(),
+                onClick = {
+                    picked = ""
+                    Prefs(context).setWidgetDeviceId("")
+                    WidgetRefresher.refresh(context, force = true)
+                },
+            )
+            connections.forEach { conn ->
+                WidgetDeviceChoice(
+                    label = conn.displayName(),
+                    selected = picked == conn.id,
+                    onClick = {
+                        picked = conn.id
+                        Prefs(context).setWidgetDeviceId(conn.id)
+                        WidgetRefresher.refresh(context, force = true)
+                    },
+                )
+            }
+            if (connections.isEmpty()) {
+                Text(
+                    "还没有添加过电脑，先在列表里连一台。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WidgetDeviceChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) DshColor.Accent else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            Icon(
+                painter = painterResource(FnhIcons.Check),
+                contentDescription = "已选择",
+                tint = DshColor.Accent,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSheet(
@@ -1054,6 +1150,10 @@ fun SettingsSheet(
                     onClick = { confirming = true },
                 )
             }
+
+            Spacer(Modifier.height(22.dp))
+
+            WidgetDeviceSection()
 
             Spacer(Modifier.height(22.dp))
 

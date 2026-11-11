@@ -21,6 +21,9 @@ public final class Prefs {
     private static final String KEY_KNOWN_URLS = "known_urls";
     private static final String KEY_LAST_SESSION = "last_session";
 
+    /** 小组件固定关注的电脑 id；空串表示跟随当前激活的连接。 */
+    private static final String KEY_WIDGET_DEVICE = "widget_device_id";
+
     /** 界面缩放的取值范围与默认值。 */
     public static final float SCALE_MIN = 0.75f;
     public static final float SCALE_MAX = 1.60f;
@@ -61,6 +64,20 @@ public final class Prefs {
 
     public void setEntryUrl(String v) {
         sp.edit().putString(KEY_ENTRY, normalize(v)).commit();
+    }
+
+    /**
+     * 小组件固定看哪台电脑（Connection 的 id）。空串 = 跟随 App 当前激活的那台。
+     *
+     * 为什么要有它：小组件在后台刷新，没有 UI 可点；多台电脑时只能靠这一条
+     * 设置决定「这一块图标看谁的会话」。
+     */
+    public String widgetDeviceId() {
+        return sp.getString(KEY_WIDGET_DEVICE, "");
+    }
+
+    public void setWidgetDeviceId(String id) {
+        sp.edit().putString(KEY_WIDGET_DEVICE, id == null ? "" : id).commit();
     }
 
     public String layout() {
