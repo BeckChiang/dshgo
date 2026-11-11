@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.33",
+  "version": "4.5.0-beck.34",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "修「检查不到更新」（tag 解析把 -beck.N 截断）；更新页新增浏览器兜底入口；设置按连接/界面/通知/小组件/网络/安全/诊断/更新/重置重新分组，清除登录移到底部「重置」"
+  "notes": "jsDelivr 的 tag 列表会去掉前导 v（返回 4.5.0-beck.N），现在这种写法也认；配合上一版修好的 tag 解析，国内网络下也能查到更新"
 }

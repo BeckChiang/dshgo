@@ -180,14 +180,11 @@ object UpdateCheck {
             var best: String? = null
             for (i in 0 until arr.length()) {
                 val name = arr.optJSONObject(i)?.optString("version").orEmpty()
-                // 两种 tag 都认：
-                //  - `dist-v<版本>`：早期的镜像分支（保留兼容，老版本可能还在用）
-                //  - `v<版本>`：现在 gh release 直接打的 tag，例如 `v4.5.0-beck.32`
-                val v = when {
-                    name.startsWith(TAG_PREFIX) -> tagToVersion(name.removePrefix(TAG_PREFIX))
-                    name.startsWith("v") -> tagToVersion(name.removePrefix("v"))
-                    else -> null
-                } ?: continue
+                // 三种写法都要认：
+                //  - `dist-v<版本>`：早期的镜像分支（保留兼容）
+                //  - `v<版本>`：gh release 直接打的 tag
+                //  - `<版本>`：jsDelivr 的 tags 列表会把前导 v 去掉，实测返回的就是 `4.5.0-beck.32`
+                val v = tagToVersion(name.removePrefix(TAG_PREFIX)) ?: continue
                 if (best == null || isNewer(v, best)) best = v
             }
             val v = best ?: return null
