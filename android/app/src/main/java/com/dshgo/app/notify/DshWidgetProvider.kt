@@ -13,6 +13,8 @@ import android.widget.RemoteViews
 import com.dshgo.app.MainActivity
 import com.dshgo.app.Prefs
 import com.dshgo.app.R
+import com.dshgo.app.data.AutoRoute
+import com.dshgo.app.data.WidgetDevice
 import com.dshgo.app.data.WidgetState
 import com.dshgo.app.data.WidgetStateStore
 import java.util.Locale
@@ -297,9 +299,20 @@ class DshWidgetProvider : AppWidgetProvider() {
             } else {
                 setViewVisibility(R.id.widget_running, View.GONE)
             }
+            // 底部这一行是「一眼判断能不能用」的地方：只有「未连接」时用户分不清
+            // 是没网、地址过期还是没解锁，所以地址与通道也写出来。
             val pricing = state?.pricingLabel?.trim().orEmpty()
             val status = WidgetRefresher.statusText().trim()
-            val footer = listOf(pricing, status).filter { it.isNotEmpty() }.joinToString(" · ")
+            val base = runCatching { WidgetDevice.url(ctx) }.getOrDefault("")
+            val host = base.removePrefix("https://").removePrefix("http://").trimEnd('/')
+            val channel = when {
+                AutoRoute.isTailscaleUrl(base) -> "Tailscale"
+                AutoRoute.isLanUrl(base) -> "局域网"
+                else -> ""
+            }
+            val footer = listOf(host, channel, status, pricing)
+                .filter { it.isNotEmpty() }
+                .joinToString(" · ")
             if (footer.isEmpty()) {
                 setViewVisibility(R.id.widget_footer, View.GONE)
             } else {

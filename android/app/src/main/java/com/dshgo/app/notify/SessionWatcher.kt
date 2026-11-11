@@ -46,6 +46,12 @@ object SessionWatcher {
     private const val MAX_KEPT = 50
     private const val RECONNECT_MS = 5_000L
 
+    /** 连续失败时的退避上限：太短会把服务器打醒，太长用户看不到更新。 */
+    private const val RECONNECT_MAX_MS = 60_000L
+
+    /** 事件流静默这么久就主动重连 —— 半开连接不会给 onDown，只能靠时间判断。 */
+    private const val IDLE_RECONNECT_MS = 90_000L
+
     private val _notices = MutableStateFlow<List<Notice>>(emptyList())
     val notices: StateFlow<List<Notice>> = _notices.asStateFlow()
 
@@ -140,6 +146,8 @@ object SessionWatcher {
     data class Summary(
         val running: Int = 0,
         val approvals: Int = 0,
+        /** 会话里「待完成」的条目（最多 2 条）；有就优先显示在常驻通知上。 */
+        val todo: List<String> = emptyList(),
         val lastDoneTitle: String? = null,
         val lastDoneAt: Long = 0L,
         /**
@@ -163,7 +171,15 @@ object SessionWatcher {
         }
 
         fun detail(host: String): String = buildString {
-            firstApproval?.reason?.takeIf { it.isNotBlank() }?.let { append(it.take(60)) }
+            // 待完成优先：用户要的是「接下来还要做什么」，而不是「刚做完了什么」。
+            if (todo.isNotEmpty()) {
+                append("待完成：")
+                todo.forEachIndexed { i, t -> if (i > 0) append(" · "); append(t.take(40)) }
+            }
+            firstApproval?.reason?.takeIf { it.isNotBlank() }?.let {
+                if (isNotEmpty()) append(" · ")
+                append(it.take(60))
+            }
             if (isEmpty() && running > 0) append("正在执行…")
             if (lastDoneTitle != null && lastDoneAt > 0) {
                 if (isNotEmpty()) append(" · ")
@@ -310,12 +326,31 @@ object SessionWatcher {
                         done.complete(Unit)
                     }
                 })
+                // 半开连接探测：连上后长时间没有任何事件（也没 onDown）时，主动断一次。
+                // 实测移动网络切 Wi-Fi 后，旧 socket 会一直活着但永远不来数据。
+                val watchdog = scope.launch {
+                    while (isActive) {
+                        delay(15_000)
+                        val idle = System.currentTimeMillis() - _lastEventAt.value
+                        if (_live.value && idle > IDLE_RECONNECT_MS) {
+                            _lastError.value = "事件流 ${idle / 1000}s 没有数据，重连"
+                            runCatching { stream?.close() }
+                            done.complete(Unit)
+                            break
+                        }
+                    }
+                }
                 val opened = withTimeoutOrNull(OPEN_TIMEOUT_MS) { done.await() } != null
+                watchdog.cancel()
                 runCatching { stream?.close() }
                 stream = null
-                // 连上过又断了 → 计入失败；一直连不上更要计
+                // 连上过又断了 → 计入失败；一直连不上更要记。
                 wsFailures++
-                if (isActive) delay(RECONNECT_MS)
+                if (isActive) {
+                    // 5s、10s、20s……封顶 60s，再加 0–1s 抖动：多台设备同时重连时不会齐步走。
+                    val backoff = (RECONNECT_MS shl (wsFailures - 1).coerceIn(0, 4)).coerceAtMost(RECONNECT_MAX_MS)
+                    delay(backoff + (0..1000L).random())
+                }
             }
         }
     }
@@ -357,6 +392,7 @@ object SessionWatcher {
                 approvals = _approvals.value.size,
                 lastDoneTitle = _notices.value.firstOrNull { it.kind == Kind.Done }?.title,
                 lastDoneAt = _notices.value.firstOrNull { it.kind == Kind.Done }?.at ?: 0L,
+                todo = WidgetRefresher.todoLines(),
                 firstApproval = _approvals.value.firstOrNull(),
             )
         }

@@ -37,6 +37,24 @@ object WidgetRefresher {
 
     enum class Outcome { Unknown, Ok, Locked, Offline }
 
+    /**
+     * 最近一次成功拉到的快照。
+     *
+     * 通知正文要用会话里的「待完成」条目，而常驻通知的刷新只走 SessionWatcher 的状态流；
+     * 把它留在这儿，才能在不额外发请求的情况下把「待完成」写进通知。
+     */
+    @Volatile
+    var lastState: com.dshgo.app.data.WidgetState? = null
+        private set
+
+    /** 所有会话里待完成的前 [limit] 条，给通知正文用。 */
+    fun todoLines(limit: Int = 2): List<String> =
+        lastState?.workspaces.orEmpty()
+            .flatMap { it.sessions }
+            .flatMap { it.todo }
+            .distinct()
+            .take(limit)
+
     /** 最近一次成功拉取的时间；0 = 还没成功过。 */
     @Volatile
     var lastOkAt: Long = 0L
@@ -95,6 +113,7 @@ object WidgetRefresher {
                 when (val r = WidgetStateClient.fetch(app)) {
                     is WidgetStateClient.Result.Ok -> {
                         WidgetStateStore.save(app, r.raw)
+                        lastState = runCatching { com.dshgo.app.data.WidgetState.parse(org.json.JSONObject(r.raw)) }.getOrNull()
                         lastOutcome = Outcome.Ok
                         lastError = ""
                         lastOkAt = System.currentTimeMillis()

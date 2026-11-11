@@ -42,8 +42,10 @@ data class WidgetState(
         val status: String,
         val contextPercent: Int?,
         val pendingApproval: Boolean,
-        /** 最后一条可读消息的摘要；端点上没有就为 null，渲染层隐藏这一行。 */
+        /** 最后一条可读消息里「摘要」那一节；端点上没有就为 null，渲染层隐藏这一行。 */
         val summary: String? = null,
+        /** 最后一条消息里「待完成」那几条（最多 3 条）；通知正文用这个。 */
+        val todo: List<String> = emptyList(),
         /** 是否被置顶（端点暂未稳定提供，缺省 false；有了就在运行组内加权）。 */
         val pinned: Boolean = false,
     ) {
@@ -148,6 +150,9 @@ data class WidgetState(
                             s.optBoolean("pendingApproval", false) ||
                             s.optInt("approvals", 0) > 0,
                         summary = if (s.isNull("summary")) null else s.optString("summary").takeIf { it.isNotBlank() },
+                        todo = s.optJSONArray("todo")?.let { arr ->
+                            (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { t -> t.isNotBlank() } }
+                        }.orEmpty(),
                         pinned = s.optBoolean("pinned", false),
                     ),
                 )
