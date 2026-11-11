@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.40",
+  "version": "4.5.0-beck.41",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "换网络不再误刷新（VPN 建立/断开不算换网）；同址重连直接跳过"
+  "notes": "摘要改用「起 / 止」标记提取，小组件只显示中间内容"
 }
