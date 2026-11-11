@@ -31,6 +31,7 @@ import androidx.lifecycle.lifecycleScope
 import com.dshgo.app.data.UpdateCheck
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.res.Configuration
 import androidx.activity.result.contract.ActivityResultContracts
 import android.webkit.ValueCallback
 import android.net.Uri
@@ -1190,11 +1191,23 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
+    /** 上次看到的深浅色（UI_MODE_NIGHT_MASK 的结果），用来区分「换主题」和「换尺寸」。 */
+    private var lastUiMode = -1
+
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         // 系统切深色/浅色时 DSH 页面必须重新取一次，否则它还按旧主题渲染。
+        //
+        // 但清单里也声明了 screenSize/screenLayout（分屏、折叠屏开合都会走这里），
+        // 以前这里**无条件** loadUrl：一开合就把整页刷掉，用户看到「界面尺寸一变就整个重载」。
+        // 只有深浅色真的变了才重载，尺寸变化交给 WebView 自己重排。
+        val mode = newConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val themeChanged = lastUiMode != -1 && lastUiMode != mode
+        lastUiMode = mode
+        if (!themeChanged) return
         val entry = prefs.entryUrl()
         if (entry.isEmpty() || !loaded) return
+        EventLog.event(this, "config", "uiMode -> $mode; reload for theme")
         ensureThemeCookie(entry)
         webView.loadUrl(entry, themeHeaders())
     }
@@ -1600,6 +1613,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
 
     /** 重新读连接列表并探测一遍。 */
+    /** 冷启动「首次探测全灭」只补探一次，避免网络没起来时来回打转。 */
+    private var warmRetryDone = false
+
     private fun refreshConnections() {
         val list = ConnectionStore.all(this)
         ui = ui.copy(connections = list, activeConnId = ConnectionStore.activeId(this))
@@ -1650,6 +1666,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 connections = refreshed,
             )
             maybeRebuildTunnel(statuses)
+            // 冷启动时网络栈可能还没就绪：第一次探测全灭会让列表闪一下「断联」，
+            // 而之后没有任何东西再触发探测（用户 21:02 报的第三个问题）。
+            // 全灭就等 2.5 s 再探一次，只补一次，避免打转。
+            val allDown = statuses.isNotEmpty() &&
+                statuses.values.all { it.level == ConnectionProbe.Level.Offline }
+            if (allDown && !warmRetryDone) {
+                warmRetryDone = true
+                EventLog.event(this@MainActivity, "conn", "all offline on first probe; retry in 2.5s")
+                webHost.postDelayed({ refreshConnections() }, 2_500L)
+            } else if (!allDown) {
+                warmRetryDone = false
+            }
             // R17：地址变了但用户还停在旧地址上时，自动跟到新的局域网地址。
             // 只有在「同一台电脑（deviceId 相同）+ 现在确实能连」时才切，
             // 免得把用户从能用的通道上踢下去。

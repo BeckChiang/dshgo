@@ -101,7 +101,11 @@ object WidgetRefresher {
      */
     fun statusText(): String {
         // 正在拉取时先说「检查中」：用户点了刷新，界面得马上有反应。
-        if (inFlight?.isActive == true) return "检查中…"
+        // 但只认最近 20s 内的在飞请求 —— 隧道抖动时一次拉取可能拖很久，
+        // 以前这里会永远停在「检查中…」（用户 21:02 报的第二个问题）。
+        val flying = inFlight?.isActive == true
+        if (flying && System.currentTimeMillis() - lastStartAt < 20_000L) return "检查中…"
+        if (flying) return if (lastError.isNotBlank()) "未连接 · $lastError" else "未连接 · 超时"
         val base = when (lastOutcome) {
             Outcome.Ok -> ""
             Outcome.Locked -> "需要解锁"
