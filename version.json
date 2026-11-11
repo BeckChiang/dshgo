@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.37",
+  "version": "4.5.0-beck.38",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "隧道看门狗不再看引擎状态（服务被杀也能拉起）；建不起来时界面直说原因（别的 VPN 占用/授权被撤销）；小组件跟随网络切换；常驻通知被清后自动补回；设备列表只显示当前该用的那条通道"
+  "notes": "小组件显示「摘要」节、常驻通知显示「待完成」；底栏加地址与通道；事件流失败退避与半空闲重连"
 }
