@@ -96,7 +96,7 @@ object WidgetStateClient {
         val host = uri.host ?: return false
         val port = if (uri.port > 0) uri.port else 80
         java.net.Socket().use { s ->
-            s.connect(java.net.InetSocketAddress(host, port), 600)
+            s.connect(java.net.InetSocketAddress(host, port), 350)
             true
         }
     } catch (_: Throwable) {

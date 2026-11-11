@@ -170,6 +170,17 @@ object SessionWatcher {
             else -> "DSH 空闲"
         }
 
+        /** 常驻通知专用：不带「待完成」——待完成属于每条会话的完成通知。 */
+        fun detailForForeground(host: String): String = buildString {
+            firstApproval?.reason?.takeIf { it.isNotBlank() }?.let { append(it.take(60)) }
+            if (isEmpty() && running > 0) append("$running 个会话在跑")
+            if (lastDoneTitle != null && lastDoneAt > 0) {
+                if (isNotEmpty()) append(" · ")
+                append("刚完成「").append(lastDoneTitle.take(18)).append("」")
+            }
+            append(if (isEmpty()) "" else " · ").append("已连接 ").append(host)
+        }
+
         fun detail(host: String): String = buildString {
             // 待完成优先：用户要的是「接下来还要做什么」，而不是「刚做完了什么」。
             if (todo.isNotEmpty()) {

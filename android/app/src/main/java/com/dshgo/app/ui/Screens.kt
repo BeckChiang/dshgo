@@ -2278,13 +2278,27 @@ fun ConnectionsScreen(
     }
 
     editingRows?.let { rows ->
+        val context = LocalContext.current
         DeviceDialog(
             rows = rows,
             statuses = statuses,
             activeId = activeId,
             onDismiss = { editingRows = null },
             onSave = { updated ->
+                val stale = rows.map { it.url }.toSet() - updated.map { it.url }.toSet()
                 updated.forEach { onEdit(it) }
+                if (stale.isNotEmpty()) {
+                    ConnectionStore.forgetUrls(
+                        context,
+                        stale,
+                        updated.map { it.id }.toSet(),
+                    )
+                }
+                editingRows = null
+            },
+            onUseLan = { conn ->
+                onEdit(conn)
+                onSwitch(conn)
                 editingRows = null
             },
             onDeleteAll = {
@@ -2588,6 +2602,8 @@ private fun DeviceDialog(
     onDismiss: () -> Unit,
     onSave: (List<Connection>) -> Unit,
     onDeleteAll: () -> Unit,
+    /** 探测确认能连后的「立刻用这条地址」：保存 + 切换，不必再点保存。 */
+    onUseLan: (Connection) -> Unit,
 ) {
     val first = rows.firstOrNull() ?: return
     var name by remember { mutableStateOf(first.name) }
@@ -2706,15 +2722,29 @@ private fun DeviceDialog(
                                 android.webkit.CookieManager.getInstance().getCookie(probeUrl)
                             }.getOrNull()
                             val st = runCatching { ConnectionProbe.probe(probeUrl, cookie) }.getOrNull()
-                            lanBusy = false
                             val lan = st?.lanUrls?.firstOrNull()
                             lanFetched = lan
-                            lanNote = when {
-                                st == null -> "问不到：请求失败"
-                                lan != null -> "电脑当前局域网地址：$lan"
-                                st.locked -> "电脑回了「需要解锁」，拿不到地址列表"
-                                st.lanUrls.isEmpty() -> "电脑在线，但没上报局域网地址"
-                                else -> "电脑在线，但没有可用的局域网地址"
+                            if (lan != null) {
+                                // 拿到就当场试一次：能连就直接切到局域网，不用用户自己点。
+                                lanNote = "正在测试 $lan …"
+                                val probe = runCatching { ConnectionProbe.probe(lan, cookie) }.getOrNull()
+                                val ok = probe != null && probe.level == ConnectionProbe.Level.Online
+                                lanBusy = false
+                                lanNote = if (ok) "电脑当前局域网地址：$lan（可连接，正在切换）"
+                                else "电脑当前局域网地址：$lan（暂时连不上，可稍后重试）"
+                                if (ok) {
+                                    val target = rows.firstOrNull { channelLabel(it.url) == "局域网" }
+                                    if (target != null) onUseLan(target.copy(url = lan))
+                                    else onUseLan(first.copy(url = lan, id = ""))
+                                }
+                            } else {
+                                lanBusy = false
+                                lanNote = when {
+                                    st == null -> "问不到：请求失败"
+                                    st.locked -> "电脑回了「需要解锁」，拿不到地址列表"
+                                    st.lanUrls.isEmpty() -> "电脑在线，但没上报局域网地址"
+                                    else -> "电脑在线，但没有可用的局域网地址"
+                                }
                             }
                         }
                     },

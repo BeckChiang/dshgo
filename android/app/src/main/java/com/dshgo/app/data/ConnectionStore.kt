@@ -202,6 +202,21 @@ object ConnectionStore {
      * 回到首页看到的是「还没有连接」。这是实测才发现的：
      * 代码看着完全对，跑一遍才发现列表里没有刚连的那台。
      */
+    /**
+     * 地址被原地替换后，把指向旧地址的那条连接删掉。
+     *
+     * 不删就会出现「改完地址、列表里多出一台叫旧地址的设备」——旧记录带着自己的 id
+     * 和（可能为空的）deviceId，归并键不同，永远并不回同一张卡。
+     */
+    fun forgetUrls(ctx: Context, staleUrls: Set<String>, keepIds: Set<String>): Int {
+        if (staleUrls.isEmpty()) return 0
+        val list = all(ctx)
+        val doomed = list.filter { it.url in staleUrls && it.id !in keepIds }
+        if (doomed.isEmpty()) return 0
+        doomed.forEach { remove(ctx, it.id) }
+        return doomed.size
+    }
+
     fun ensure(ctx: Context, url: String): Connection? {
         if (url.isEmpty()) return null
         val list = all(ctx)

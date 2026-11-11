@@ -104,7 +104,14 @@ object WidgetRefresher {
         // 但只认最近 20s 内的在飞请求 —— 隧道抖动时一次拉取可能拖很久，
         // 以前这里会永远停在「检查中…」（用户 21:02 报的第二个问题）。
         val flying = inFlight?.isActive == true
-        if (flying && System.currentTimeMillis() - lastStartAt < 20_000L) return "检查中…"
+        val fresh = flying && System.currentTimeMillis() - lastStartAt < 20_000L
+        // 已经有上一次成功结果时，不要用「检查中」把时间戳顶掉（用户要的是「保持现有提示 + 刷新中」）。
+        if (fresh && lastOkAt > 0) {
+            val t = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(lastOkAt))
+            return "更新于 $t · 刷新中"
+        }
+        if (fresh) return "连接中…"
         if (flying) return if (lastError.isNotBlank()) "未连接 · $lastError" else "未连接 · 超时"
         val base = when (lastOutcome) {
             Outcome.Ok -> ""
