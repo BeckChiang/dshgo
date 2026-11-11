@@ -511,6 +511,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         // 没有更合适的再原地重连，并且保留滚动位置。
         NetWatcher.attach(this) {
             runOnUiThread {
+                // 停在设备列表时换网：列表里的地址/状态都是上一次探测的快照，
+                // 必须按新网络重探一遍，否则点进去还是旧地址（用户 22:19 报的第三条）。
+                if (ui.screen == Screen.Connections && !ui.connecting) {
+                    refreshConnections()
+                }
                 if (!::webView.isInitialized) return@runOnUiThread
                 val current = webView.url ?: return@runOnUiThread
                 if (!current.startsWith("http")) return@runOnUiThread
@@ -1739,11 +1744,42 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private fun switchTo(conn: Connection) {
         // 手动选择优先：记下来，后台探测别再把地址改回去。
         setManualRoute(true)
-        ConnectionStore.markUsed(this, conn.id)
-        prefs.setEntryUrl(conn.url)
-        prefs.rememberUrl(conn.url)
-        ui = ui.copy(activeConnId = conn.id)
-        connect(conn.url)
+        // ★ 点下去的那一刻按「当前网络」重新挑通道：列表里的行按上一次探测渲染，
+        //   换过 Wi-Fi / 走过隧道之后那一行可能已经过期，直接用 conn.url 会去连旧网段的地址
+        //   （用户 22:19 报的「点击连接还是用的旧地址」）。
+        val fresh = resolveNow(conn)
+        ConnectionStore.markUsed(this, fresh.id)
+        prefs.setEntryUrl(fresh.url)
+        prefs.rememberUrl(fresh.url)
+        ui = ui.copy(activeConnId = fresh.id)
+        connect(fresh.url)
+    }
+
+    /**
+     * 同一台电脑有几条通道时，按当前网络挑一条最可能通的。
+     *
+     * 顺序：上次探测在线的那条 > 当前网络该走的那类（Wi-Fi→局域网、其它→Tailscale）
+     * > 原先点的那条。只读本地状态，不发网络请求 —— 点一下就进去，不能再等一轮探测。
+     */
+    private fun resolveNow(conn: Connection): Connection {
+        val all = runCatching { ConnectionStore.all(this) }.getOrDefault(emptyList())
+        val sameDevice = if (conn.deviceId.isNotBlank()) {
+            all.filter { it.deviceId == conn.deviceId }.ifEmpty { listOf(conn) }
+        } else listOf(conn)
+        if (sameDevice.size <= 1) return conn
+        val onWifi = AutoRoute.onWifi(this)
+        fun rank(c: Connection): Int {
+            val st = ui.connStatuses[c.url]
+            val online = st?.level == ConnectionProbe.Level.Online
+            val lan = AutoRoute.isLanUrl(c.url)
+            return when {
+                online && lan == onWifi -> 0
+                online -> 1
+                lan == onWifi -> 2
+                else -> 3
+            }
+        }
+        return sameDevice.sortedWith(compareBy({ rank(it) }, { if (it.url == conn.url) 0 else 1 })).first()
     }
 
     /** 保存新增或编辑后的连接；改的是当前那条就顺势重连。 */

@@ -62,6 +62,10 @@ object WidgetStateClient {
         val preferred = WidgetDevice.candidates(ctx)
         if (preferred.isEmpty()) return@withContext Result.Failed("未配置入口地址")
         val bases = reorderByReachability(preferred)
+        // 解锁 cookie 是按 host 存的：在隧道那条地址上解过锁，切到局域网这条就没有，
+        // 小组件于是回「需要解锁」，而 App 里点进去是直通的（用户最早报的 R11 同源）。
+        // 同一台电脑的两条通道本来就该共用一份凭据，这里先把它搬过去。
+        runCatching { carryUnlockCookie(bases) }
 
         var lastFailure: Result = Result.Failed("未配置入口地址")
         for (base in bases) {
@@ -74,6 +78,32 @@ object WidgetStateClient {
         }
         return@withContext lastFailure
     }
+
+    /**
+     * 把 `dshgo-unlock` 在候选地址之间搬一份。
+     *
+     * WebView 的 cookie 按 host 隔离，而同一台电脑的局域网/隧道是两条 host ——
+     * 不搬的话「在这条上解过锁、换到那条又要输密码」。
+     */
+    private fun carryUnlockCookie(bases: List<String>) {
+        if (bases.size < 2) return
+        val cm = CookieManager.getInstance()
+        val source = bases.firstOrNull { (cm.getCookie(it) ?: "").contains(UNLOCK_COOKIE) } ?: return
+        val hit = (cm.getCookie(source) ?: "")
+            .split(';')
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("$UNLOCK_COOKIE=") } ?: return
+        var changed = false
+        for (dst in bases) {
+            if (dst == source) continue
+            if ((cm.getCookie(dst) ?: "").contains(UNLOCK_COOKIE)) continue
+            cm.setCookie(dst, "$hit; path=/; max-age=${30 * 24 * 60 * 60}")
+            changed = true
+        }
+        if (changed) cm.flush()
+    }
+
+    private const val UNLOCK_COOKIE = "dshgo-unlock"
 
     /**
      * 按 TCP 可达性重排候选地址。

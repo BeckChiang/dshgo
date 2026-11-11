@@ -26,8 +26,8 @@ android {
         applicationId = "com.beck.dshgo"
         minSdk = 26
         targetSdk = 35
-        versionCode = 92
-        versionName = "4.5.0-beck.49"
+        versionCode = 95
+        versionName = "4.5.0-beck.52"
     }
 
     signingConfigs {

@@ -24,7 +24,10 @@ import kotlinx.coroutines.launch
 object WidgetRefresher {
 
     /** 同一时刻只允许一个在飞；两次主动刷新至少隔 3s（切工作区是强制刷新，不受限）。 */
-    private const val MIN_INTERVAL_MS = 1_000L
+    // 事件流每来一条就会催一次刷新，1 秒的节流等于「一直在飞」——
+    // 底栏于是永远停在「刷新中」（用户 22:19 报的）。小组件不需要秒级新鲜度，
+    // 15 秒一次足够；用户主动点刷新走 force，不受这个限制。
+    private const val MIN_INTERVAL_MS = 15_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var inFlight: Job? = null
@@ -99,20 +102,31 @@ object WidgetRefresher {
      * 小组件还是 1 个」，其实是一次 401/断网被静默吞掉了。把失败原因写出来，
      * 用户点一下就能判断是「没连上」还是「需要解锁」。
      */
-    fun statusText(): String {
+    fun statusText(ctx: android.content.Context? = null): String {
         // 正在拉取时先说「检查中」：用户点了刷新，界面得马上有反应。
         // 但只认最近 20s 内的在飞请求 —— 隧道抖动时一次拉取可能拖很久，
         // 以前这里会永远停在「检查中…」（用户 21:02 报的第二个问题）。
+        if (ctx != null && lastOkAt == 0L) {
+            val sp = ctx.getSharedPreferences("dshgo_widget", android.content.Context.MODE_PRIVATE)
+            val at = sp.getLong("last_ok_at", 0L)
+            if (at > 0L) {
+                lastOkAt = at
+                lastOkBase = sp.getString("last_ok_base", "") ?: ""
+            }
+        }
         val flying = inFlight?.isActive == true
+        // 「刷新中」只在前 3 秒里说：它是「我刚点了刷新」的反馈，不是常驻状态。
+        val justStarted = flying && System.currentTimeMillis() - lastStartAt < 3_000L
         val fresh = flying && System.currentTimeMillis() - lastStartAt < 20_000L
         // 已经有上一次成功结果时，不要用「检查中」把时间戳顶掉（用户要的是「保持现有提示 + 刷新中」）。
-        if (fresh && lastOkAt > 0) {
+        if (lastOkAt > 0) {
             val t = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                 .format(java.util.Date(lastOkAt))
-            return "更新于 $t · 刷新中"
+            return if (justStarted) "更新于 $t · 刷新中" else "更新于 $t"
         }
-        if (fresh) return "连接中…"
-        if (flying) return if (lastError.isNotBlank()) "未连接 · $lastError" else "未连接 · 超时"
+        // ★ 不在飞的时候也不要说「连接中…」：这句话会被当成常驻状态，
+        //   用户看到的永远是「连接中」，而不是「到底连上了没有」。
+        //   有结果就报结果，只在刚点刷新那 3 秒里补一句「刷新中」。
         val base = when (lastOutcome) {
             Outcome.Ok -> ""
             Outcome.Locked -> "需要解锁"
@@ -120,11 +134,32 @@ object WidgetRefresher {
             Outcome.Offline -> if (lastError.isNotBlank()) "未连接 · $lastError" else "未连接"
             Outcome.Unknown -> "尚未刷新"
         }
+        // 只有「已经连上过」才加「刷新中」：失败状态下再挂一句刷新中，
+        // 用户会以为它还在努力，其实是没连上。
+        val suffix = if (justStarted && lastOutcome == Outcome.Ok) " · 刷新中" else ""
         return if (lastOkAt > 0) {
             val t = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                 .format(java.util.Date(lastOkAt))
-            if (base.isEmpty()) "更新于 $t" else "$base · 上次 $t"
-        } else base
+            (if (base.isEmpty()) "更新于 $t" else "$base · 上次 $t") + suffix
+        } else base + suffix
+    }
+
+    /**
+     * 把底层异常压成一句人话。
+     *
+     * OkHttp 的原话是 `failed to connect to /100.75.57.100 (port 3081) after 350ms`，
+     * 底栏只有两行，长句会把「通道 · 状态 · 峰谷」挤没（用户 22:37 的截图就是这个）。
+     */
+    private fun shortReason(message: String): String {
+        val m = message.lowercase()
+        return when {
+            m.contains("timeout") || m.contains("timed out") -> "超时"
+            m.contains("failed to connect") || m.contains("refused") -> "连不上"
+            m.contains("401") || m.contains("locked") -> "需要解锁"
+            m.contains("unable to resolve") || m.contains("unknown host") -> "解析不了"
+            message.isBlank() -> "未连接"
+            else -> message.take(10)
+        }
     }
 
     /**
@@ -186,6 +221,12 @@ object WidgetRefresher {
                         lastError = ""
                         lastOkBase = r.base
                         lastOkAt = System.currentTimeMillis()
+                        // 落盘：进程被回收后小组件还开着，底栏不能退化成「尚未刷新」。
+                        app.getSharedPreferences("dshgo_widget", android.content.Context.MODE_PRIVATE)
+                            .edit()
+                            .putLong("last_ok_at", lastOkAt)
+                            .putString("last_ok_base", lastOkBase)
+                            .apply()
                     }
                     WidgetStateClient.Result.Locked -> {
                         lastOutcome = Outcome.Locked
@@ -194,7 +235,7 @@ object WidgetRefresher {
                     is WidgetStateClient.Result.Failed -> {
                         // 失败不删缓存：上一次的数据比「未连接」有用得多。
                         lastOutcome = Outcome.Offline
-                        lastError = r.message.take(40)
+                        lastError = shortReason(r.message)
                     }
                 }
                 // 无论成败都重绘：成功换新数据，失败退回缓存/降级文案。

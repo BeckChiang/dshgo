@@ -2304,6 +2304,9 @@ fun ConnectionsScreen(
                         updated.map { it.id }.toSet(),
                     )
                 }
+                // 改过地址就地重探：否则列表还挂着旧地址那次探测的文案
+                // （「可以连接 · 需要密码登录」写在刚改成 192.168.x 的条目上）。
+                onProbeAll()
                 editingRows = null
             },
             onUseLan = { conn ->
