@@ -4,7 +4,7 @@
 
 Fnh Go 是 [xiazhi88/dshgo](https://github.com/xiazhi88/dshgo)（MIT）的社区分支（fork）。上游提供了「把只监听 `127.0.0.1` 的 `dsh web` 反代到局域网 + Android App」的完整底座；本分支在它之上重做了连接与设备管理、内嵌了 Tailscale 隧道、补齐了深色模式与图标体系。
 
-当前版本：**App `4.5.0-beck.32`（versionCode 75）**、**插件 `2.0.5`**。
+当前版本：**App `4.5.0-beck.33`（versionCode 76）**、**插件 `2.0.5`**。
 
 ## 与上游的差别
 
@@ -81,10 +81,11 @@ node --test test/proxy.test.mjs
 node --test test/version.test.mjs
 ```
 
-App 侧真机清单见 `work/` 下的 `TEST-CHECKLIST-beck.32.md`（随每次发版更新）。
+App 侧真机清单见 `work/` 下的 `TEST-CHECKLIST-beck.33.md`（随每次发版更新）。
 
 ## 更新记录
 
+- `beck.33`：修「检查不到更新」——`tagToVersion` 之前把 `v4.5.0-beck.33` 截成 `4.5.0`，导致永远判定为最新；更新区新增「在浏览器打开 GitHub 更新页」兜底；设置重排为连接 / 界面 / 通知 / 小组件 / 网络 / 安全 / 诊断 / 更新 / 重置，清除登录与缓存移到底部「重置」组并二次确认。
 - `beck.32`：小组件改用「选定设备 + 当前网络」的地址（不再吃 App 上次那个入口地址）、底栏直接写失败原因、设置里新增「小组件」一节可选看哪台电脑、常驻看门狗每分钟催一次刷新。
 - `beck.31`：首屏不等探测（探测与查更新挪到首帧之后）、已有解锁 Cookie 时直连跳过锁页；**App 内「检查更新」改为直连 GitHub Releases 的最新资产**（`FnhGo-latest.apk`，不再维护 jsDelivr dist 分支）。
 - `beck.30`：从 DSH 回设备页按当前网络重读重探；换路后 700 ms 二次选址（外网→内网不再卡在旧地址）；顶部条按钮真正贴右。

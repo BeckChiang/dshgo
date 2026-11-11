@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.32",
+  "version": "4.5.0-beck.33",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "小组件按当前网络选通道、支持在设置里固定看哪台电脑；小组件底栏显示失败原因；后台每分钟催一次刷新"
+  "notes": "修「检查不到更新」（tag 解析把 -beck.N 截断）；更新页新增浏览器兜底入口；设置按连接/界面/通知/小组件/网络/安全/诊断/更新/重置重新分组，清除登录移到底部「重置」"
 }

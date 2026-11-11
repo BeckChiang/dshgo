@@ -627,8 +627,7 @@ private fun WidgetDeviceSection() {
 }
 
 @Composable
-private fun WidgetDeviceChoice(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
+private fun WidgetDeviceChoice(label: String, selected: Boolean, onClick: () -> Unit) {    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
@@ -774,6 +773,37 @@ fun SettingsSheet(
 
             Spacer(Modifier.height(20.dp))
 
+            // 连接管理入口。放在入口地址下面 —— 它管的就是那个地址。
+            Spacer(Modifier.height(14.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenConnections,
+                shape = RoundedCornerShape(14.dp),
+                color = softAccent(),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "连接",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        if (connectionCount > 1) "$connectionCount 个 · 切换" else "管理",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DshColor.Accent,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            SettingsGroupTitle("界面")
+            Spacer(Modifier.height(8.dp))
+
             // 布局
             Text(
                 "会话内界面布局",
@@ -804,106 +834,6 @@ fun SettingsSheet(
 
             Spacer(Modifier.height(20.dp))
 
-            // 连接管理入口。放在入口地址下面 —— 它管的就是那个地址。
-            Spacer(Modifier.height(14.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onOpenConnections,
-                shape = RoundedCornerShape(14.dp),
-                color = softAccent(),
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "连接",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        if (connectionCount > 1) "$connectionCount 个 · 切换" else "管理",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = DshColor.Accent,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            SettingsGroupTitle("安全")
-            Spacer(Modifier.height(8.dp))
-
-            // 解锁方式
-            //
-            // 放在这里而不是塞进通知那块：它和"怎么进这个 App"有关，
-            // 和通知无关。设备实际支持什么写在下面 —— 用户选了"仅指纹/人脸"
-            // 但这台设备只有人脸时，得让他看得见为什么弹的是人脸。
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Text(
-                        "解锁方式",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "打开 App 时怎么验证身份。访问密码始终是根凭据 —— 生物识别只是本机的一道门。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-                    SegmentedControl(
-                        options = listOf(
-                            "auto" to "自动",
-                            "biometric" to "指纹/人脸",
-                            "credential" to "设备密码",
-                            "none" to "每次输密码",
-                        ),
-                        selected = lockMode,
-                        onSelect = onLockMode,
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        buildString {
-                            append(
-                                when (lockMode) {
-                                    "biometric" -> "只用指纹或人脸，不给设备密码回退。"
-                                    "credential" -> "只用设备的 PIN / 图案 / 密码。"
-                                    "none" -> "本机不存密码，每次打开都手输 —— 最严的一档。"
-                                    else -> "指纹或人脸优先，没有就用设备密码。"
-                                },
-                            )
-                            if (lockMode != "none") {
-                                append("　这台设备可用：")
-                                append(lockDeviceMethod.ifEmpty { "无" })
-                                if (lockDeviceMethod == "无") {
-                                    // 文案要跟着选项走 —— 选了「设备密码」却说"配好指纹或人脸"，
-                                    // 用户会以为选错了
-                                    append(
-                                        if (lockMode == "credential") "（先去系统设置里设一个 PIN 或图案）"
-                                        else "（配好指纹或人脸后再来）",
-                                    )
-                                }
-                            }
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            SettingsGroupTitle("界面")
-            Spacer(Modifier.height(8.dp))
 
             // 界面缩放
             Row(
@@ -1118,39 +1048,6 @@ fun SettingsSheet(
 
             Spacer(Modifier.height(20.dp))
 
-            var confirming by remember { mutableStateOf(false) }
-            if (confirming) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = DshColor.DangerSoft,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, DshColor.Danger.copy(alpha = 0.3f),
-                    ),
-                ) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text(
-                            "清除后会退回连接页，需要重新握手。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                            TextButton(onClick = { confirming = false }) { Text("取消") }
-                            TextButton(onClick = onClearSession) {
-                                Text("确认清除", color = DshColor.Danger)
-                            }
-                        }
-                    }
-                }
-            } else {
-                OutlinedActionButton(
-                    label = "清除登录与缓存",
-                    tint = DshColor.Danger,
-                    onClick = { confirming = true },
-                )
-            }
-
             Spacer(Modifier.height(22.dp))
 
             WidgetDeviceSection()
@@ -1160,9 +1057,80 @@ fun SettingsSheet(
             TsTunnelSection()
 
             Spacer(Modifier.height(18.dp))
+
+            SettingsGroupTitle("安全")
+            Spacer(Modifier.height(8.dp))
+
+            // 解锁方式
+            //
+            // 放在这里而不是塞进通知那块：它和"怎么进这个 App"有关，
+            // 和通知无关。设备实际支持什么写在下面 —— 用户选了"仅指纹/人脸"
+            // 但这台设备只有人脸时，得让他看得见为什么弹的是人脸。
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(
+                        "解锁方式",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "打开 App 时怎么验证身份。访问密码始终是根凭据 —— 生物识别只是本机的一道门。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+                    SegmentedControl(
+                        options = listOf(
+                            "auto" to "自动",
+                            "biometric" to "指纹/人脸",
+                            "credential" to "设备密码",
+                            "none" to "每次输密码",
+                        ),
+                        selected = lockMode,
+                        onSelect = onLockMode,
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        buildString {
+                            append(
+                                when (lockMode) {
+                                    "biometric" -> "只用指纹或人脸，不给设备密码回退。"
+                                    "credential" -> "只用设备的 PIN / 图案 / 密码。"
+                                    "none" -> "本机不存密码，每次打开都手输 —— 最严的一档。"
+                                    else -> "指纹或人脸优先，没有就用设备密码。"
+                                },
+                            )
+                            if (lockMode != "none") {
+                                append("　这台设备可用：")
+                                append(lockDeviceMethod.ifEmpty { "无" })
+                                if (lockDeviceMethod == "无") {
+                                    // 文案要跟着选项走 —— 选了「设备密码」却说"配好指纹或人脸"，
+                                    // 用户会以为选错了
+                                    append(
+                                        if (lockMode == "credential") "（先去系统设置里设一个 PIN 或图案）"
+                                        else "（配好指纹或人脸后再来）",
+                                    )
+                                }
+                            }
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
             DiagnosticsSection()
 
-            SettingsGroupTitle("关于")
+            SettingsGroupTitle("更新与版本")
             Spacer(Modifier.height(8.dp))
 
             // 版本与更新
@@ -1281,6 +1249,19 @@ fun SettingsSheet(
                         Text("把小组件放到桌面", style = MaterialTheme.typography.labelSmall)
                     }
 
+                    // 兜底：查不到版本（GitHub API 在国内经常连不上）或下载装不上时，
+                    // 至少还有一条「拿浏览器去 GitHub 自己看」的路。
+                    TextButton(
+                        onClick = { onDownload(UpdateCheck.RELEASES_PAGE) },
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text(
+                            "在浏览器打开 GitHub 更新页",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = DshColor.Accent,
+                        )
+                    }
+
                     if (!updateChecking && updateLatest != null && !updateNewer) {
                         Spacer(Modifier.height(6.dp))
                         Text(
@@ -1314,6 +1295,13 @@ fun SettingsSheet(
                 }
             }
 
+            Spacer(Modifier.height(24.dp))
+
+            // 破坏性操作放最后：以前它夹在「通知」和「小组件」中间，
+            // 手滑点到的代价太高，也说不清属于哪一类。
+            ResetSection(onClearSession = onClearSession)
+
+            Spacer(Modifier.height(10.dp))
             Text(
                 "Fnh Go · 直连你自己的电脑 · 界面为 DSH 原生",
                 style = MaterialTheme.typography.labelSmall,
@@ -2761,5 +2749,49 @@ private fun autoPickUrl(context: Context, lan: String, tail: String): String {
         l.isBlank() -> t
         isOnWifi(context) -> l
         else -> t
+    }
+}
+
+/**
+ * 重置类操作：唯一会「把已有登录/缓存清掉」的地方。
+ *
+ * 为什么单独成组：这些按钮一旦误触代价很高，混在通知、主题、小组件中间
+ * 会让人以为它也是普通开关。放最后一组、用危险色、二次确认，三件事一起做。
+ */
+@Composable
+private fun ResetSection(onClearSession: () -> Unit) {
+    SettingsGroupTitle("重置")
+    Spacer(Modifier.height(8.dp))
+    var confirming by remember { mutableStateOf(false) }
+    if (confirming) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = DshColor.DangerSoft,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp, DshColor.Danger.copy(alpha = 0.3f),
+            ),
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Text(
+                    "清除后会退回连接页，需要重新握手。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { confirming = false }) { Text("取消") }
+                    TextButton(onClick = onClearSession) {
+                        Text("确认清除", color = DshColor.Danger)
+                    }
+                }
+            }
+        }
+    } else {
+        OutlinedActionButton(
+            label = "清除登录与缓存",
+            tint = DshColor.Danger,
+            onClick = { confirming = true },
+        )
     }
 }

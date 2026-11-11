@@ -52,6 +52,18 @@ class UpdateCheckTest {
     }
 
     @Test
+    fun `beck 后缀是版本的一部分，不能被截断`() {
+        // 曾经的 bug：正则只取 `x.y.z`，把 v4.5.0-beck.32 切成 4.5.0，
+        // 于是「4.5.0」跟本机「4.5.0-beck.31」比被判定成不更新 —— 查不到更新。
+        assertEquals("4.5.0-beck.32", UpdateCheck.tagToVersion("v4.5.0-beck.32"))
+        assertEquals("4.5.0-beck.32", UpdateCheck.tagToVersion("4.5.0-beck.32"))
+        assertEquals("4.5.0-beck.32", UpdateCheck.tagToVersion("dist-v4.5.0-beck.32"))
+        assertTrue(UpdateCheck.isNewer("4.5.0-beck.32", "4.5.0-beck.31"))
+        assertFalse(UpdateCheck.isNewer("4.5.0-beck.31", "4.5.0-beck.32"))
+        assertFalse(UpdateCheck.isNewer("4.5.0-beck.31", "4.5.0-beck.31"))
+    }
+
+    @Test
     fun `后缀不影响比较`() {
         // 版本号里可能带 -rc / +build 之类，正则应把数字段取出来即可
         assertTrue(UpdateCheck.isNewer("3.7.0-rc.1", "3.6.5"))

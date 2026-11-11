@@ -34,6 +34,15 @@ object UpdateCheck {
     const val APK_URL = "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk"
 
     /**
+     * 人看的更新页：浏览器打开就是「最新 Release 页面」。
+     *
+     * 为什么留它：查版本要打 GitHub API，国内经常连不上；下载资产要打
+     * release-assets，也可能被挡。两条都断的时候，至少还能让用户自己
+     * 用浏览器去页面点一下 —— 这是唯一不依赖 App 内网络路径的兜底。
+     */
+    const val RELEASES_PAGE = "https://github.com/BeckChiang/dshgo/releases/latest"
+
+    /**
      * jsDelivr 的**包元数据接口** —— 返回仓库的全部 tag。
      *
      * ★ 这是整个更新检查里最关键的一条。踩过的坑，按时间顺序：
@@ -171,8 +180,14 @@ object UpdateCheck {
             var best: String? = null
             for (i in 0 until arr.length()) {
                 val name = arr.optJSONObject(i)?.optString("version").orEmpty()
-                if (!name.startsWith(TAG_PREFIX)) continue
-                val v = tagToVersion(name.removePrefix(TAG_PREFIX)) ?: continue
+                // 两种 tag 都认：
+                //  - `dist-v<版本>`：早期的镜像分支（保留兼容，老版本可能还在用）
+                //  - `v<版本>`：现在 gh release 直接打的 tag，例如 `v4.5.0-beck.32`
+                val v = when {
+                    name.startsWith(TAG_PREFIX) -> tagToVersion(name.removePrefix(TAG_PREFIX))
+                    name.startsWith("v") -> tagToVersion(name.removePrefix("v"))
+                    else -> null
+                } ?: continue
                 if (best == null || isNewer(v, best)) best = v
             }
             val v = best ?: return null
@@ -213,10 +228,23 @@ object UpdateCheck {
         }
     }
 
-    /** `app-v3.6.5` → `3.6.5`。标签格式变了就返回 null（不猜）。 */
+    /**
+     * `v4.5.0-beck.32` → `4.5.0-beck.32`；`app-v3.6.5` → `3.6.5`。
+     *
+     * ★ 必须保留 `-beck.N` 这一段。之前的正则是 `v?(\d+(?:\.\d+)+)`，
+     * 它会在第一个 `-` 处停下，把 `v4.5.0-beck.32` 切成 `4.5.0`；
+     * 于是拿 `4.5.0` 和本机的 `4.5.0-beck.31` 比，被判定成「不更新」——
+     * 这就是「检查不到更新」的真正原因，跟网络无关。
+     */
     internal fun tagToVersion(tag: String): String? {
-        val m = Regex("""v?(\d+(?:\.\d+)+)""").find(tag) ?: return null
-        return m.groupValues[1]
+        val t = tag.trim()
+        // 1) 现在的发版形状：v4.5.0-beck.32 —— 后缀是版本的一部分，必须留着。
+        Regex("""(?:^|[-_])v?(\d+(?:\.\d+)+)-beck\.(\d+)$""").find(t)?.let {
+            return "${it.groupValues[1]}-beck.${it.groupValues[2]}"
+        }
+        // 2) 老形状：版本号出现在任意位置（release-1.2.3-final）。
+        Regex("""(\d+(?:\.\d+)+)""").find(t)?.let { return it.groupValues[1] }
+        return null
     }
 
     /**
