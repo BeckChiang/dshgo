@@ -310,7 +310,8 @@ class DshWidgetProvider : AppWidgetProvider() {
                 AutoRoute.isLanUrl(base) -> "局域网"
                 else -> ""
             }
-            val footer = listOf(host, channel, status, pricing)
+            // 用户要求精简：不写具体地址，只写「走的是哪条通道」+ 状态。
+            val footer = listOf(channel.ifEmpty { host.substringBefore(':') }, status, pricing)
                 .filter { it.isNotEmpty() }
                 .joinToString(" · ")
             if (footer.isEmpty()) {

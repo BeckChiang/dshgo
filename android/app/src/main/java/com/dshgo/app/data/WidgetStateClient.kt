@@ -51,8 +51,12 @@ object WidgetStateClient {
     suspend fun fetch(ctx: Context): Result = withContext(Dispatchers.IO) {
         // 地址不是「入口地址」那么简单：小组件可能在后台、App 没打开过、
         // 用户又刚切过网络 —— 交给 WidgetDevice 按「选定设备 + 当前网络」算。
-        val bases = WidgetDevice.candidates(ctx)
-        if (bases.isEmpty()) return@withContext Result.Failed("未配置入口地址")
+        // 通道独立检查：小组件不等 App 的当前入口，自己按 TCP 可达性排一遍。
+        // 用户在 App 里「明明连着」，小组件却因为挑了另一条（比如在外网挑局域网）
+        // 报「未连接」—— 这是最常被吐槽的那个不一致。
+        val preferred = WidgetDevice.candidates(ctx)
+        if (preferred.isEmpty()) return@withContext Result.Failed("未配置入口地址")
+        val bases = reorderByReachability(preferred)
 
         var lastFailure: Result = Result.Failed("未配置入口地址")
         for (base in bases) {
@@ -64,6 +68,34 @@ object WidgetStateClient {
             }
         }
         return@withContext lastFailure
+    }
+
+    /**
+     * 按 TCP 可达性重排候选地址。
+     *
+     * 每条最多等 600ms：够局域网/隧道握手，又不至于让小组件刷新卡住。
+     * 可达的排前面（保持原来的偏好顺序），全不可达就原样返回，让后面的 HTTP 请求给出具体原因。
+     */
+    private fun reorderByReachability(bases: List<String>): List<String> {
+        if (bases.size < 2) return bases
+        val reachable = ArrayList<String>(bases.size)
+        val others = ArrayList<String>(bases.size)
+        for (base in bases) {
+            if (tcpReachable(base)) reachable.add(base) else others.add(base)
+        }
+        return if (reachable.isEmpty()) bases else reachable + others
+    }
+
+    private fun tcpReachable(base: String): Boolean = try {
+        val uri = java.net.URI(base)
+        val host = uri.host ?: return false
+        val port = if (uri.port > 0) uri.port else 80
+        java.net.Socket().use { s ->
+            s.connect(java.net.InetSocketAddress(host, port), 600)
+            true
+        }
+    } catch (_: Throwable) {
+        false
     }
 
     /** 单条地址的抓取 + 解锁重试。 */

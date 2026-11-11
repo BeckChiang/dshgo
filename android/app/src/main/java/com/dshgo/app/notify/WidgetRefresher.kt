@@ -28,6 +28,9 @@ object WidgetRefresher {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var inFlight: Job? = null
+
+    /** 请求被节流/合并时记一笔，本轮结束后补跑一次，避免「最后一次状态变化丢了」。 */
+    private var pending = false
     private var lastStartAt = 0L
 
     /** 最近一次拉取结果，供 provider 选择降级文案（「未连接」 vs「已锁定」）。 */
@@ -107,7 +110,12 @@ object WidgetRefresher {
         }
         synchronized(this) {
             val now = System.currentTimeMillis()
-            if (!force && (inFlight?.isActive == true || now - lastStartAt < MIN_INTERVAL_MS)) return
+            if (!force && (inFlight?.isActive == true || now - lastStartAt < MIN_INTERVAL_MS)) {
+                // 丢掉请求就等于丢掉一次状态变化（用户看到「在跑 1 个」但行还是旧的）。
+                // 记下来，等这一轮结束后补一次；force 的请求不排队（本来就是为了立刻看）。
+                if (inFlight?.isActive == true) pending = true
+                return
+            }
             lastStartAt = now
             inFlight = scope.launch {
                 when (val r = WidgetStateClient.fetch(app)) {
@@ -131,6 +139,11 @@ object WidgetRefresher {
                 // 无论成败都重绘：成功换新数据，失败退回缓存/降级文案。
                 DshWidgetProvider.update(app, SessionWatcher.summary.value)
                 ScheduleWidgetProvider.update(app)
+                if (pending) {
+                    pending = false
+                    // 补跑一次：这一轮拿到的可能是变化之前的状态。
+                    refresh(app, force = true)
+                }
             }
         }
     }

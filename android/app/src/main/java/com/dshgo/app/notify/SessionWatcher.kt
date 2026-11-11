@@ -199,6 +199,14 @@ object SessionWatcher {
     private val _approvals = MutableStateFlow<List<DshApi.ApprovalAsk>>(emptyList())
     val approvals: StateFlow<List<DshApi.ApprovalAsk>> = _approvals.asStateFlow()
 
+    /**
+     * 当前在跑的会话 id 快照。
+     *
+     * 给小组件行用：事件流一收到「开始跑」，行就应该变绿，
+     * 不该等到下一次 widget 快照拉取（最多 8 秒）才更新。
+     */
+    fun liveRunningIds(): Set<String> = synchronized(this) { running.toSet() }
+
     /** 常驻通知显示的内容。running / approvals / notices 任一变化都会重算。 */
     val summary: StateFlow<Summary> get() = _summary
     private val _summary = MutableStateFlow(Summary())

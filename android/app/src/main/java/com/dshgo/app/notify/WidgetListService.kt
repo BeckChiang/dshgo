@@ -67,10 +67,14 @@ class SessionFactory(private val ctx: Context) : RemoteViewsService.RemoteViewsF
             views.setTextViewText(R.id.widget_row_summary, text)
         }
 
+        // 状态以「事件流知道的实时状态」为准：widget 快照有节流，
+        // 而底栏计数是实时的 —— 两者不一致时用户会觉得「明明在跑，行还是灰的」。
+        val liveRunning = session.isRunning || SessionWatcher.liveRunningIds().contains(session.id)
+
         // 第三行：状态 + 是否在等审批。这一行是「加大文字、增多内容」后的信息主位。
         val status = when {
             row.alert -> ctx.getString(R.string.widget_row_status_approval)
-            session.isRunning -> ctx.getString(R.string.widget_row_status_running)
+            liveRunning -> ctx.getString(R.string.widget_row_status_running)
             else -> ctx.getString(R.string.widget_row_status_idle)
         }
         views.setTextViewText(R.id.widget_row_meta, status)
@@ -80,7 +84,7 @@ class SessionFactory(private val ctx: Context) : RemoteViewsService.RemoteViewsF
             R.id.widget_row_dot,
             when {
                 row.alert -> R.drawable.widget_dot_approval
-                session.isRunning -> R.drawable.widget_dot_running
+                liveRunning -> R.drawable.widget_dot_running
                 else -> R.drawable.widget_dot_idle
             },
         )
