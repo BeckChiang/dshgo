@@ -604,13 +604,23 @@ private fun WidgetDeviceSection() {
                     WidgetRefresher.refresh(context, force = true)
                 },
             )
-            connections.forEach { conn ->
+            // ★ 按「同一台电脑」归并：局域网与外网是两条通道，不是两台设备。
+            //   以前直接遍历连接列表，于是同一台电脑会出现两次，用户选了其中一条
+            //   另一条就点不上（实测反馈）。
+            val groups = connections.groupBy {
+                if (it.deviceId.isNotBlank()) "d:${it.deviceId}" else "c:${it.id}"
+            }
+            groups.forEach { (key, rows) ->
+                val head = rows.first()
+                val pickedKey = connections.firstOrNull { it.id == picked }?.let {
+                    if (it.deviceId.isNotBlank()) "d:${it.deviceId}" else "c:${it.id}"
+                }
                 WidgetDeviceChoice(
-                    label = conn.displayName(),
-                    selected = picked == conn.id,
+                    label = if (rows.size > 1) "${head.displayName()} · ${rows.size} 条通道" else head.displayName(),
+                    selected = picked.isNotBlank() && pickedKey == key,
                     onClick = {
-                        picked = conn.id
-                        Prefs(context).setWidgetDeviceId(conn.id)
+                        picked = head.id
+                        Prefs(context).setWidgetDeviceId(head.id)
                         WidgetRefresher.refresh(context, force = true)
                     },
                 )

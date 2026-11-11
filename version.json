@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0-beck.34",
+  "version": "4.5.0-beck.35",
   "apk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
   "apkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
-  "notes": "jsDelivr 的 tag 列表会去掉前导 v（返回 4.5.0-beck.N），现在这种写法也认；配合上一版修好的 tag 解析，国内网络下也能查到更新"
+  "notes": "设备页返回键直接退出；进设备首帧慢时自动补一次导航（不再需要点两下/重新连接）；设置里小组件按设备归并（同一台电脑不再显示两条），小组件失败会自动换另一条通道重试"
 }

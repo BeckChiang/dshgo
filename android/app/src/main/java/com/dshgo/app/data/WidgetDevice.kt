@@ -45,6 +45,39 @@ object WidgetDevice {
     }
 
     /**
+     * 这台电脑的所有候选地址，按「当前网络下更可能能用」的顺序排列。
+     *
+     * 为什么需要列表而不只是 [url]：隧道没起来、或对端换了网段时，首选地址会失败；
+     * 这时换另一条再试一次，比让小组件一直挂着「未连接」好。
+     */
+    fun candidates(ctx: Context): List<String> {
+        val picked = Prefs(ctx).widgetDeviceId()
+        val conns = ConnectionStore.all(ctx)
+        val target = if (picked.isNotBlank()) {
+            conns.firstOrNull { it.id == picked } ?: ConnectionStore.active(ctx)
+        } else {
+            ConnectionStore.active(ctx)
+        } ?: return listOfNotNull(
+            Prefs(ctx).entryUrl().trim().trimEnd('/').ifEmpty { null },
+        )
+
+        val rows = conns.filter { it.deviceKey() == target.deviceKey() }.ifEmpty { listOf(target) }
+        val wifi = AutoRoute.onWifi(ctx)
+        val lan = rows.filter { AutoRoute.isLanUrl(it.url) }
+        val tail = rows.filter { AutoRoute.isTailscaleUrl(it.url) }
+        val ordered = buildList {
+            if (wifi) {
+                addAll(lan); addAll(tail)
+            } else {
+                addAll(tail); addAll(lan)
+            }
+            add(target)
+            addAll(rows)
+        }
+        return ordered.map { it.url.trim().trimEnd('/') }.filter { it.isNotEmpty() }.distinct()
+    }
+
+    /**
      * 设置页里给人看的一句话：这台电脑现在会用哪条地址。
      */
     fun describe(ctx: Context): String = url(ctx).ifEmpty { "未配置" }

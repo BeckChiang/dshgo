@@ -190,6 +190,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      */
     private var switchAutoReloadArmed = false
 
+    /** 进设备后是否已经自动补过一次导航（首帧到达后复位）。 */
+    private var entryRetried = false
+
     /** 宿主的解锁 cookie 名（`lib/auth.mjs` 的 `UNLOCK_COOKIE`）。同名才能在通道间搬运。 */
     private val UNLOCK_COOKIE = "dshgo-unlock"
 
@@ -766,6 +769,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 // 只是转圈，而页面其实早就能点了。
                 switchAutoReloadArmed = false
                 if (ui.screen == Screen.Dsh && ui.pageError == null && !ui.dshReady) {
+                    entryRetried = false
                     ui = ui.copy(dshReady = true)
                 }
             }
@@ -1709,6 +1713,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             startLoadTimeout()
             ensureThemeCookie(entry)
             webView.loadUrl(entry, themeHeaders())
+            armEntryRetry(entry)
             return
         }
 
@@ -1909,6 +1914,29 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             ui.screen == Screen.Setup && loaded -> ui = ui.copy(screen = Screen.Dsh)
             else -> finish()
         }
+    }
+
+    /**
+     * 进设备时的「没反应就自愈一次」。
+     *
+     * 用户实测：从设备列表点进去，偶尔第一下什么都没发生，得再点一次；
+     * 或者进去后停在错误页、点左下角「重新连接」才恢复 —— 本质是首次导航
+     * 的那一次请求早了（隧道刚起，或代理还没把 main document 注入完）。
+     *
+     * 4 秒还没有首帧就替用户再点一次（同一地址重新 loadUrl），只补一次。
+     */
+    private fun armEntryRetry(entry: String) {
+        if (entryRetried) return
+        val token = webView
+        token.postDelayed({
+            if (this.isFinishing) return@postDelayed
+            if (ui.screen != Screen.Dsh || ui.dshReady || ui.dshError != null) return@postDelayed
+            if (entryRetried) return@postDelayed
+            entryRetried = true
+            EventLog.event(this, "entry", "no first frame after enter; retry once")
+            ensureThemeCookie(entry)
+            token.loadUrl(entry, themeHeaders())
+        }, 4_000L)
     }
 
     private fun startLoadTimeout() {
@@ -2139,7 +2167,9 @@ private fun Shell(
     BackHandler {
         when (state.screen) {
             Screen.Setup -> if (state.dshReady) onCancelSetup() else onBack()
-            Screen.Connections -> if (state.dshReady) onBackToDsh() else onBack()
+            // ★ 设备选择页按返回就退出 App（用户明确要求）：以前 dshReady 还是 true
+            //   时会退回 DSH，于是「列表 ↔ DSH」来回跳。
+            Screen.Connections -> onBack()
             else -> onBack()
         }
     }

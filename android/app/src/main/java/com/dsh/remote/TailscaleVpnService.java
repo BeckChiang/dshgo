@@ -344,6 +344,13 @@ public class TailscaleVpnService extends VpnService implements libtailscale.IPNS
                 return null;
             }
             final ParcelFileDescriptor fd = b.establish();
+            if (fd == null) {
+                // establish() 返回 null 的两个常见原因：用户还没同意 VpnService.prepare()，
+                // 或者**已经有一个系统 VPN 在跑**（Android 同一时间只允许一条 VPN）。
+                // 后者是用户反馈「开了 VPN 就建不起隧道」的根因，日志里写清楚便于排查。
+                android.util.Log.e("DSHVPN-JAVA",
+                        "establish returned null: another VPN may be active (Android allows only one)");
+            }
             if (fd == null) return null;
             return new libtailscale.ParcelFileDescriptor() {
                 @Override public int detach() throws Exception {

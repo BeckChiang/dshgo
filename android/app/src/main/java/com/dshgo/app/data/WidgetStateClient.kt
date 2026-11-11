@@ -51,9 +51,23 @@ object WidgetStateClient {
     suspend fun fetch(ctx: Context): Result = withContext(Dispatchers.IO) {
         // 地址不是「入口地址」那么简单：小组件可能在后台、App 没打开过、
         // 用户又刚切过网络 —— 交给 WidgetDevice 按「选定设备 + 当前网络」算。
-        val base = WidgetDevice.url(ctx)
-        if (base.isBlank()) return@withContext Result.Failed("未配置入口地址")
+        val bases = WidgetDevice.candidates(ctx)
+        if (bases.isEmpty()) return@withContext Result.Failed("未配置入口地址")
 
+        var lastFailure: Result = Result.Failed("未配置入口地址")
+        for (base in bases) {
+            when (val r = fetchOne(ctx, base)) {
+                is Result.Ok -> return@withContext r
+                // 锁着说明地址是通的，换一条也一样会被锁，直接返回
+                is Result.Locked -> return@withContext r
+                is Result.Failed -> lastFailure = r
+            }
+        }
+        return@withContext lastFailure
+    }
+
+    /** 单条地址的抓取 + 解锁重试。 */
+    private suspend fun fetchOne(ctx: Context, base: String): Result = withContext(Dispatchers.IO) {
         try {
             var (code, body) = get("$base$PATH?sessions=$SESSION_LIMIT")
             // 未解锁：401 + {"error":{"code":"locked"},"needAuth":true}。
