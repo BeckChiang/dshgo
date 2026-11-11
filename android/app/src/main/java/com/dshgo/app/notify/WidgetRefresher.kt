@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 小组件的「数据 → 界面」泵。
@@ -171,6 +172,47 @@ object WidgetRefresher {
      *    「检查中…」——即便 [statusText] 早就能给出「超时」也不会自己刷。
      * 所以这里做两件事：超过 20 s 在飞就放弃，并且每一拍都重绘一次。
      */
+
+    /**
+     * 用电脑上报的 `addrs` 把本地存的地址对齐。
+     *
+     * 为什么不复用界面的探测：小组件刷新本来就刚和电脑通过话，再走一遍 2500 ms 的
+     * 全量探测不值得；这里只要 `/__dshgo__/info` 那一个小 JSON。
+     */
+    private suspend fun syncAddressesFromPc(ctx: android.content.Context, base: String) =
+        withContext(Dispatchers.IO) {
+            val cookie = runCatching {
+                android.webkit.CookieManager.getInstance().getCookie(base).orEmpty()
+            }.getOrDefault("")
+            val req = okhttp3.Request.Builder()
+                .url(base.trimEnd('/') + "/__dshgo__/info")
+                .header("accept", "application/json")
+                .apply { if (cookie.isNotBlank()) header("cookie", cookie) }
+                .build()
+            val body = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(1_500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .readTimeout(1_500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .build()
+                .newCall(req).execute().use { res -> if (res.isSuccessful) res.body?.string() else null }
+                ?: return@withContext
+            val json = runCatching { org.json.JSONObject(body) }.getOrNull() ?: return@withContext
+            val id = json.optString("deviceId")
+            if (id.isBlank()) return@withContext
+            val addrs = json.optJSONObject("addrs")
+            fun list(key: String): List<String> {
+                val arr = addrs?.optJSONArray(key) ?: return emptyList()
+                return (0 until arr.length()).mapNotNull { i ->
+                    arr.optString(i).takeIf { it.isNotBlank() }
+                }
+            }
+            val changed = com.dshgo.app.data.ConnectionStore.applyReported(
+                ctx, id, list("lan"), list("tail"),
+            )
+            if (changed > 0) {
+                com.dshgo.app.data.EventLog.event(ctx, "widget", "address synced x$changed")
+            }
+        }
+
     fun tick(ctx: Context) {
         val app = ctx.applicationContext
         val flying = inFlight?.isActive == true
@@ -221,6 +263,10 @@ object WidgetRefresher {
                         lastError = ""
                         lastOkBase = r.base
                         lastOkAt = System.currentTimeMillis()
+                        // ★ 小组件自己顺手把地址对齐一次。
+                        //   以前只有 App 打开过才会 reconcile：局域网地址过期 + 隧道没起时，
+                        //   桌面上的小组件只能一直报超时，等用户想起来打开 App 才恢复。
+                        runCatching { syncAddressesFromPc(app, r.base) }
                         // 落盘：进程被回收后小组件还开着，底栏不能退化成「尚未刷新」。
                         app.getSharedPreferences("dshgo_widget", android.content.Context.MODE_PRIVATE)
                             .edit()

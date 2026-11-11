@@ -168,6 +168,46 @@ object ConnectionStore {
      *
      * 返回改动了几条连接。
      */
+    /**
+     * 用**电脑自己上报的** `addrs` 对齐同一台设备的两条地址。
+     *
+     * 不需要探测状态：谁拿到了 `/info` 的响应谁来调（主界面探测、小组件自己的刷新都行）。
+     * 这是「小组件在局域网地址过期、隧道也没起时」还能自己把地址救回来的关键 ——
+     * 以前只有 App 打开过一次（`reconcileDevices` 跑过）地址才会更新。
+     *
+     * @return 改动了几条连接
+     */
+    fun applyReported(
+        ctx: Context,
+        deviceId: String,
+        lanUrls: List<String>,
+        tailUrls: List<String>,
+    ): Int {
+        if (deviceId.isBlank()) return 0
+        if (lanUrls.isEmpty() && tailUrls.isEmpty()) return 0
+        val list = all(ctx).toMutableList()
+        val taken = list.map { it.url }.toHashSet()
+        var changed = 0
+        for (i in list.indices) {
+            val conn = list[i]
+            val id = conn.deviceId.ifBlank { deviceId }
+            if (id != deviceId) continue
+            val host = runCatching { java.net.URI(conn.url).host.orEmpty() }.getOrDefault("")
+            val isTail = host.startsWith("100.")
+            val reported = (if (isTail) tailUrls else lanUrls)
+                .firstOrNull { it.startsWith("http") } ?: continue
+            val normalized = reported.trimEnd('/')
+            if (normalized == conn.url) continue
+            if (normalized in taken) continue
+            taken.remove(conn.url)
+            taken.add(normalized)
+            list[i] = conn.copy(url = normalized, deviceId = deviceId)
+            changed++
+        }
+        if (changed > 0) persist(ctx, list)
+        return changed
+    }
+
     fun reconcileByDevice(ctx: Context, statuses: Map<String, ConnectionProbe.Status>): Int {
         // deviceId → (lan 列表, tail 列表)：只收「本次确实探通了并且带了身份」的
         val seen = HashMap<String, Pair<List<String>, List<String>>>()
@@ -177,30 +217,10 @@ object ConnectionStore {
             if (st.lanUrls.isEmpty() && st.tailUrls.isEmpty()) return@forEach
             seen[st.deviceId] = st.lanUrls to st.tailUrls
         }
-        if (seen.isEmpty()) return 0
-
-        val list = all(ctx).toMutableList()
-        val taken = list.map { it.url }.toHashSet()
         var changed = 0
-        for (i in list.indices) {
-            val conn = list[i]
-            val id = conn.deviceId.ifBlank { statuses[conn.url]?.deviceId.orEmpty() }
-            if (id.isBlank()) continue
-            val pair = seen[id] ?: continue
-            val host = runCatching { java.net.URI(conn.url).host.orEmpty() }.getOrDefault("")
-            val isTail = host.startsWith("100.")
-            val reported = (if (isTail) pair.second else pair.first)
-                .firstOrNull { it.startsWith("http") } ?: continue
-            val normalized = reported.trimEnd('/')
-            if (normalized == conn.url) continue
-            // 新地址已经属于另一条连接：那是「换过来」，别合并错
-            if (normalized in taken) continue
-            taken.remove(conn.url)
-            taken.add(normalized)
-            list[i] = conn.copy(url = normalized, deviceId = id)
-            changed++
+        seen.forEach { (id, pair) ->
+            changed += applyReported(ctx, id, pair.first, pair.second)
         }
-        if (changed > 0) persist(ctx, list)
         return changed
     }
 

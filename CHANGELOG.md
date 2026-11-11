@@ -8,6 +8,11 @@
 两者互不约束：插件改了不一定要出 App，App 改了也不一定要动插件。
 App 在设备列表/设备详情里显示的 `vX.Y.Z` 就是这里读到的插件版本（`/__dshgo__/info` 的 `version`）。
 
+## 2.1.2
+
+- 「手机 App」卡片不再显示本机局域网入口，改为显示 GitHub 上的安装包地址（`info.app.apk`）——手机要装的是 APK，给局域网地址既会误导，出门也用不了。
+- 该地址随 `/__dshgo__/info` 的 `app.apk` 实时更新（GitHub Releases 的最新资产）。
+
 ## 2.1.1
 
 - 设置面板的「手机 App」卡片不再写死版本号与下载地址：版本 / 下载链接 / 发版页改为服务端实时查 GitHub Releases（`lib/app-release.mjs`，6 小时缓存，失败回退 `package.json` 的 `dshgo.appVersion/appApk`）。

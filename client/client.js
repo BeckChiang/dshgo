@@ -6236,7 +6236,6 @@ window.__ModuleLoader__.load({
      *   · 在电脑上     → 先把局域网地址给他，让他去手机浏览器打开同一页
      */
     function AppCard(props) {
-      const lanUrl = (props.lan && props.lan.length > 0) ? props.lan[0] : null;
       // 版本与下载地址都来自服务端（/__dshgo__/info 的 app 字段，实时查 GitHub Releases）。
       // 以前这两个是写死在这里的，于是页面永远显示 beck.10、下载链接指向已不存在的 fnh-go.apk。
       const app = props.app || {};
@@ -6269,13 +6268,13 @@ window.__ModuleLoader__.load({
               style: { ...styles.btn, display: 'inline-block', marginTop: 10, textDecoration: 'none' },
             }, L('下载 APK（约 34 MB）', 'Download APK (about 34 MB)'))
           : h('div', null,
+              // 这里**给的是 GitHub 上的安装包地址**，不是本机的局域网入口。
+              // 手机要装的是 APK，不是打开这一页；给局域网地址会让人以为「用这个装」，
+              // 而且那个地址只在同一个 Wi-Fi 下有效 —— 出差在外根本用不了。
               h('div', { style: styles.muted },
-                L('在手机浏览器里打开下面这个地址，回到同一页就能下载：',
-                  'Open this address in your phone browser and come back to this page to download:')),
-              lanUrl
-                ? h(AddressRow, { url: lanUrl, copied: props.copied, onCopy: props.onCopy })
-                : h('div', { style: styles.muted },
-                    L('（先把上面的地址填进手机）', '(Use the address above on your phone)')),
+                L('手机浏览器打开下面这个地址即可下载最新安装包：',
+                  'Open this address in your phone browser to download the latest build:')),
+              h(AddressRow, { url: apkUrl, copied: props.copied, onCopy: props.onCopy }),
             ),
 
         h('div', { style: styles.muted },
