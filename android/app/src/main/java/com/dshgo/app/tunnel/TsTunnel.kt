@@ -32,8 +32,17 @@ object TsTunnel {
     fun wantsTunnel(ctx: Context): Boolean = prefs(ctx).getBoolean(PREF_WANT, false)
 
     /** 上一次建隧道失败的原因（由 TailscaleVpnService.TsBuilder.establish 写入，成功后自动清空）。 */
-    fun lastError(ctx: Context): String =
-        runCatching { Prefs.get(ctx).getString("ts_error", "").orEmpty() }.getOrDefault("")
+    fun lastError(ctx: Context): String {
+        // 隧道已经建起来了就别再挂着上一次的失败原因 —— 用户看到「隧道建不起来」
+        // 而设置里同时显示已连接，会以为是两个 bug（反馈里出现过）。
+        if (runCatching { tunUp() }.getOrDefault(false)) return ""
+        return runCatching { Prefs.get(ctx).getString("ts_error", "").orEmpty() }.getOrDefault("")
+    }
+
+    /** 隧道恢复正常后把失败的痕迹擦掉。 */
+    fun clearError(ctx: Context) {
+        runCatching { Prefs.get(ctx).edit().remove("ts_error").apply() }
+    }
 
     private fun setWants(ctx: Context, on: Boolean) =
         prefs(ctx).edit().putBoolean(PREF_WANT, on).apply()
@@ -87,7 +96,10 @@ object TsTunnel {
     fun ensureTunnel(ctx: Context): Boolean {
         val want = wantsTunnel(ctx)
         if (!want) return false
-        if (runCatching { tunUp() }.getOrDefault(false)) return false
+        if (runCatching { tunUp() }.getOrDefault(false)) {
+            clearError(ctx)
+            return false
+        }
         // 不能拿「引擎状态」当门槛：VpnService 被系统单独回收时引擎往往还活着，
         // 状态甚至是 Running —— 旧逻辑正是因此在 Running 下拒绝重建，隧道一死就一直死。
         // 现在只要「想连 + 没有 tun」就重建，只做 30 s 节流，避免和自身的启动流程抢。

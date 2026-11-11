@@ -23,6 +23,7 @@ import java.util.Locale
 import android.widget.Toast
 import android.speech.RecognizerIntent
 import com.dshgo.app.data.AddressPicker
+import com.dshgo.app.tunnel.TsTunnel
 import android.util.Log
 import android.net.ConnectivityManager
 import kotlinx.coroutines.launch
@@ -192,6 +193,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** 进设备后是否已经自动补过一次导航（首帧到达后复位）。 */
     private var entryRetried = false
+
+    /** 上一次「探测后发现 Tailscale 不通、自动重建隧道」的时间，用来节流。 */
+    private var lastTunnelRebuildTry = 0L
 
     /** 宿主的解锁 cookie 名（`lib/auth.mjs` 的 `UNLOCK_COOKIE`）。同名才能在通道间搬运。 */
     private val UNLOCK_COOKIE = "dshgo-unlock"
@@ -371,6 +375,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         )
                     },
                     onCancelSetup = { ui = ui.copy(screen = Screen.Dsh) },
+                    onSetupBack = { ui = ui.copy(screen = Screen.Connections) },
                     onLayout = ::setLayout,
                     onScale = ::applyScale,
                     onToggleAwake = ::toggleAwake,
@@ -1624,7 +1629,30 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 connections = if (moved > 0 || learned > 0) ConnectionStore.all(this@MainActivity)
                 else ui.connections,
             )
+            maybeRebuildTunnel(statuses)
         }
+    }
+
+    /**
+     * 探测发现「Tailscale 那条不通」时，如果用户本来就想用隧道（开过且没关），
+     * 而系统里没有别的 VPN 占着唯一那条槽位，就自动重建一次。
+     *
+     * 触发点选在**探测之后**：这正是「检查连接状态」那一刻，用户期待它自愈。
+     * 60 秒节流，避免每次刷新都弹系统授权。
+     */
+    private fun maybeRebuildTunnel(statuses: Map<String, ConnectionProbe.Status>) {
+        if (!TsTunnel.wantsTunnel(this)) return
+        if (TsTunnel.tunUp()) return
+        val tailDead = statuses.entries.any { (url, st) ->
+            url.contains("100.") && st.level == ConnectionProbe.Level.Offline
+        }
+        if (!tailDead) return
+        val now = System.currentTimeMillis()
+        if (now - lastTunnelRebuildTry < 60_000L) return
+        lastTunnelRebuildTry = now
+        EventLog.event(this, "route", "tail dead; auto rebuild tunnel")
+        runCatching { TsTunnel.start(this) }
+            .onFailure { EventLog.event(this, "route", "auto rebuild failed: ${it.message}") }
     }
 
     /**
@@ -2132,6 +2160,7 @@ private fun Shell(
     onCloseSettings: () -> Unit,
     onChangeUrl: () -> Unit,
     onCancelSetup: () -> Unit,
+    onSetupBack: () -> Unit,
     onLayout: (String) -> Unit,
     onScale: (Float) -> Unit,
     onToggleAwake: () -> Unit,
@@ -2180,7 +2209,9 @@ private fun Shell(
     //   都只退一级。以前一律走 onBack()，于是「添加设备」界面按返回直接退出 App。
     BackHandler {
         when (state.screen) {
-            Screen.Setup -> if (state.dshReady) onCancelSetup() else onBack()
+            // 添加/编辑设备也属于「选电脑」这条线：返回应当回到列表，
+            // 而不是把整个 App 关掉（用户第一次点「+」就撞到过这个问题）。
+            Screen.Setup -> onSetupBack()
             // ★ 设备选择页按返回就退出 App（用户明确要求）：以前 dshReady 还是 true
             //   时会退回 DSH，于是「列表 ↔ DSH」来回跳。
             Screen.Connections -> onBack()

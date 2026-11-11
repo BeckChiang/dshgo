@@ -4,7 +4,7 @@
 
 Fnh Go 是 [xiazhi88/dshgo](https://github.com/xiazhi88/dshgo)（MIT）的社区分支（fork）。上游提供了「把只监听 `127.0.0.1` 的 `dsh web` 反代到局域网 + Android App」的完整底座；本分支在它之上重做了连接与设备管理、内嵌了 Tailscale 隧道、补齐了深色模式与图标体系。
 
-当前版本：**App `4.5.0-beck.41`（versionCode 82）**、**插件 `2.0.5`**。
+当前版本：**App `4.5.0-beck.42`（versionCode 82）**、**插件 `2.0.5`**。
 
 ## 与上游的差别
 
@@ -41,6 +41,10 @@ Fnh Go 是 [xiazhi88/dshgo](https://github.com/xiazhi88/dshgo)（MIT）的社区
 `deviceId` 由 `sha256(主机名|用户名|平台)` 前 12 位派生，不落盘、不需要管理员权限；换主机名或用户名会被视为新设备。
 
 ## 安装
+
+安装时 Google Play 保护机制可能提示「建议进行应用扫描」——这是侧载 APK（不来自 Play 商店）
+的正常提示，选「扫描应用」→「仍然安装」即可。签名一旦固定、多次安装后提示会明显减少。
+
 
 插件（本机开发，profile 内 link）：
 

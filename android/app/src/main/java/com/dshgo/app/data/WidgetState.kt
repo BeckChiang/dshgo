@@ -149,7 +149,7 @@ data class WidgetState(
                         pendingApproval = s.optBoolean("approval", false) ||
                             s.optBoolean("pendingApproval", false) ||
                             s.optInt("approvals", 0) > 0,
-                        summary = if (s.isNull("summary")) null else s.optString("summary").takeIf { it.isNotBlank() },
+                        summary = if (s.isNull("summary")) null else scrubSummary(s.optString("summary")),
                         todo = s.optJSONArray("todo")?.let { arr ->
                             (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { t -> t.isNotBlank() } }
                         }.orEmpty(),
@@ -159,6 +159,27 @@ data class WidgetState(
             }
             return out
         }
+
+    /**
+     * 摘要清洗：去掉「起」「止」这两个纯标记与时间轴行。
+     *
+     * 标记是给提取用的，不该出现在卡片上。桌面端插件已经会剥掉，但插件更新要重启
+     * DSH 才生效 —— App 这边再兜一层，两边任一没更新时用户也不会看到「起」。
+     */
+    private val MARK_ONLY = Regex("^(起|开始|止|结束)\\s*[:：]?$")
+    private val TIME_BOUND = Regex("^(起|开始|止|结束)\\s*[:：]?\\s*\\d{1,2}[:：]\\d{2}.*$")
+    private val MSG_REF = Regex("[（(]\\s*m\\d{3,}[^）)]*[）)]")
+
+    internal fun scrubSummary(raw: String): String? {
+        val text = MSG_REF.replace(raw, " ")
+        val lines = text.split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .filterNot { MARK_ONLY.matches(it) }
+            .filterNot { TIME_BOUND.matches(it) }
+        val joined = lines.joinToString(" ").replace(Regex("\\s+"), " ").trim()
+        return joined.takeIf { it.isNotEmpty() }?.let { if (it.length > 100) it.take(100) + "…" else it }
+    }
     }
 }
 
@@ -237,4 +258,6 @@ object WidgetStateStore {
         setSelectedWorkspaceId(ctx, next.id)
         return next
     }
+
+
 }

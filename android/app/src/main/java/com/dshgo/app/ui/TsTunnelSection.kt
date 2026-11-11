@@ -41,6 +41,7 @@ fun TsTunnelSection() {
     val ctx = LocalContext.current
     var state by remember { mutableStateOf(TsTunnel.state(ctx)) }
     var address by remember { mutableStateOf(TsTunnel.selfAddress(ctx)) }
+    var tunnelled by remember { mutableStateOf(TsTunnel.tunUp()) }
 
     // 从管理页回来时状态可能变了；页面还在合成树里就轻量轮询一下，
     // 不做事件总线 —— 这条状态 2 秒刷一次的开销可以忽略。
@@ -48,6 +49,8 @@ fun TsTunnelSection() {
         while (true) {
             state = TsTunnel.state(ctx)
             address = TsTunnel.selfAddress(ctx)
+            tunnelled = TsTunnel.tunUp()
+            if (tunnelled) TsTunnel.clearError(ctx)
             delay(2000)
         }
     }
@@ -72,7 +75,7 @@ fun TsTunnelSection() {
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(2.dp))
-                    val tsError = com.dshgo.app.tunnel.TsTunnel.lastError(ctx)
+                    val tsError = if (tunnelled) "" else com.dshgo.app.tunnel.TsTunnel.lastError(ctx)
                     Text(
                         if (tsError.isNotBlank()) tsError + "（点「管理」重新授权）"
                         else "隧道只接入本应用，不影响其它 App；与系统 Tailscale 不能同时开。",
