@@ -223,7 +223,12 @@ object SessionWatcher {
         /** 常驻通知专用：不带「待完成」——待完成属于每条会话的完成通知。 */
         fun detailForForeground(host: String): String = buildString {
             firstApproval?.reason?.takeIf { it.isNotBlank() }?.let { append(it.take(60)) }
-            if (isEmpty() && running > 0) append(runningLabel())
+            // 标题已经写着「DSH 1 · second 1」时正文不要再念一遍：
+            // 只有标题被审批占用了，这里才补一句谁在跑。
+            if (approvals > 0 && running > 0) {
+                if (isNotEmpty()) append(" · ")
+                append(runningLabel())
+            }
             if (lastDoneTitle != null && lastDoneAt > 0) {
                 if (isNotEmpty()) append(" · ")
                 append("刚完成「").append(lastDoneTitle.take(18)).append("」")
