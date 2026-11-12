@@ -213,6 +213,49 @@ object WidgetRefresher {
             }
         }
 
+    /**
+     * 现在就拉一次快照并解析（不改小组件状态）。
+     *
+     * 给「收到跑完事件但手上没有正文」的路径用：拿到这条会话的标题、
+     * 待完成和工作区名，通知才不是一句空的「点一下跳到这个会话」。
+     */
+    suspend fun fetchNow(ctx: Context): com.dshgo.app.data.WidgetState? =
+        withContext(Dispatchers.IO) {
+            when (val r = WidgetStateClient.fetch(ctx.applicationContext)) {
+                is WidgetStateClient.Result.Ok -> runCatching {
+                    com.dshgo.app.data.WidgetState.parse(org.json.JSONObject(r.raw))
+                }.getOrNull()
+                else -> null
+            }
+        }
+
+    /**
+     * 通知里「已连接 / 未连接」那一整句 —— 必须是**实际连上的那条通道**。
+     *
+     * 用户报过：清掉通知后重贴的那条写着「隧道」，其实当时走的是局域网，
+     * 因为老代码在服务创建时就把 host 闭包了。这里每次现算并显式标注
+     * 隧道 / 局域网；连不上时区分「隧道没启动」和「隧道开着但没连上」。
+     */
+    fun channelLabel(ctx: Context): String {
+        val base = lastOkBase.ifBlank {
+            ctx.getSharedPreferences("dshgo_widget", android.content.Context.MODE_PRIVATE)
+                .getString("last_ok_base", "").orEmpty()
+        }.ifBlank { Prefs(ctx).entryUrl() }
+        val host = base.removePrefix("http://").removePrefix("https://")
+        if (host.isEmpty()) return "已连接 DSH"
+        val ip = host.substringBefore(':')
+        val fresh = System.currentTimeMillis() - lastOkAt < 90_000L
+        val kind = when {
+            ip.startsWith("100.") -> "隧道"
+            Regex("""^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)""").containsMatchIn(ip) -> "局域网"
+            else -> ""
+        }
+        if (fresh) return if (kind.isEmpty()) "已连接 $ip" else "已连接 $ip（$kind）"
+        // 连不上了：这里要回答的是「隧道到底起没起」—— 只说「未连接」等于没说。
+        val tun = runCatching { com.dshgo.app.tunnel.TsTunnel.tunUp() }.getOrDefault(false)
+        return if (tun) "未连接 · 隧道已开但没连上" else "未连接 · 隧道没启动"
+    }
+
     fun tick(ctx: Context) {
         val app = ctx.applicationContext
         val flying = inFlight?.isActive == true
@@ -263,6 +306,10 @@ object WidgetRefresher {
                         lastError = ""
                         lastOkBase = r.base
                         lastOkAt = System.currentTimeMillis()
+                        // ★ 完成通知的唯一权威来源：这份快照覆盖全部工作区，
+                        //   还带每条会话自己的「待完成」。session/list 只看得到当前
+                        //   工作区，另一个工作区的会话跑完就永远不报（bug 2/3）。
+                        lastState?.let { st -> runCatching { SessionWatcher.onSnapshot(st) } }
                         // ★ 小组件自己顺手把地址对齐一次。
                         //   以前只有 App 打开过才会 reconcile：局域网地址过期 + 隧道没起时，
                         //   桌面上的小组件只能一直报超时，等用户想起来打开 App 才恢复。
@@ -282,6 +329,9 @@ object WidgetRefresher {
                         // 失败不删缓存：上一次的数据比「未连接」有用得多。
                         lastOutcome = Outcome.Offline
                         lastError = shortReason(r.message)
+                        // 所有候选都连不上：电脑可能换了网段（DHCP 续租、路由器重启）。
+                        // 扫本网段找 3081（仅 Wi-Fi，内部 60 s 节流，最坏 3 s）。
+                        runCatching { com.dshgo.app.data.NetScan.scanIfDue(app) }
                     }
                 }
                 // 无论成败都重绘：成功换新数据，失败退回缓存/降级文案。

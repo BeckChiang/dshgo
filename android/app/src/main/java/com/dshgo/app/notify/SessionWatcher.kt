@@ -4,6 +4,7 @@ import com.dshgo.app.Prefs
 import kotlinx.coroutines.withTimeoutOrNull
 import android.content.Context
 import com.dshgo.app.data.DshApi
+import com.dshgo.app.data.WidgetState
 import com.dshgo.app.notify.DshWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,11 +40,20 @@ object SessionWatcher {
         val at: Long,
         val kind: Kind,
         val detail: String? = null,
+
+        /**
+         * 哪个工作区的会话 —— 两个工作区同时开着时，通知只说会话名分不清是哪边。
+         */
+        val space: String? = null,
     )
 
     private const val PREFS = "dsh_notices"
     private const val KEY_LIST = "list"
     private const val MAX_KEPT = 50
+
+    /** 同一会话完成通知的去重窗口：WS 事件和快照差集几乎会同时报同一件事。 */
+    private const val DONE_DEDUPE_MS = 15_000L
+
     private const val RECONNECT_MS = 5_000L
 
     /** 连续失败时的退避上限：太短会把服务器打醒，太长用户看不到更新。 */
@@ -102,6 +112,24 @@ object SessionWatcher {
     /** 当前在跑的会话。 */
     private val running = HashSet<String>()
 
+    /**
+     * 上一次 widget 快照里「每条会话是否在跑」。
+     *
+     * 为什么另起一份：`session/list` 只返回**当前工作区**的会话；两个工作区
+     * 同时开着时，另一个工作区跑完的会话根本不在差集里 —— 所以以前只收到
+     * 一个工作区的完成通知（bug 2）。`/__dshgo__/widget/state` 覆盖全部工作区，
+     * 每条会话还自带 title 与「待完成」（bug 3 也要靠它）。
+     * null = 还没有基线，这时不能判「跑完了」，否则一启动就补发一堆通知。
+     */
+    private var snapRunning: Map<String, Boolean>? = null
+
+    /** 最近一次成功快照里的工作区概况（常驻通知按它分行显示在跑数）。 */
+    @Volatile
+    private var snapSpaces: List<Summary.Space> = emptyList()
+
+    /** 每条会话上次推完成通知的时间，防止两条通路重复弹。 */
+    private val lastDoneAt = HashMap<String, Long>()
+
     /** 校准任务（去抖后用）。 */
     private var resyncJob: Job? = null
 
@@ -159,26 +187,50 @@ object SessionWatcher {
          * 那正是用户第一次测试时碰到的问题。
          */
         val firstApproval: DshApi.ApprovalAsk? = null,
+
+        /**
+         * 每个工作区各自的在跑数。
+         *
+         * 原来只报总数：「2 个会话在跑」—— 两个工作区同时开时，用户分不清哪边在跑。
+         */
+        val spaces: List<Space> = emptyList(),
     ) {
+
+        /** 一个工作区的在跑概况。 */
+        data class Space(val title: String, val running: Int, val total: Int)
         /** 有没有可以就地处理的审批。 */
         val actionable: Boolean get() = firstApproval != null
 
         fun title(): String = when {
             approvals > 1 -> "$approvals 个操作等你批准"
             approvals == 1 -> "等你批准：${firstApproval?.toolName ?: "一个操作"}"
-            running > 0 -> "$running 个会话在跑"
+            running > 0 -> runningLabel()
             else -> "DSH 空闲"
+        }
+
+        /**
+         * 「DSH 2 · second 1」—— 只列真有会话在跑的工作区。
+         *
+         * 为什么不写「3 个会话在跑」：两个工作区一起用时，用户想知道的是
+         * 「是哪边在跑」，而不是总数。
+         */
+        private fun runningLabel(): String {
+            val live = spaces.filter { it.running > 0 }
+            if (live.isEmpty()) return "$running 个会话在跑"
+            return live.joinToString(" · ") { "${it.title} ${it.running}" }
         }
 
         /** 常驻通知专用：不带「待完成」——待完成属于每条会话的完成通知。 */
         fun detailForForeground(host: String): String = buildString {
             firstApproval?.reason?.takeIf { it.isNotBlank() }?.let { append(it.take(60)) }
-            if (isEmpty() && running > 0) append("$running 个会话在跑")
+            if (isEmpty() && running > 0) append(runningLabel())
             if (lastDoneTitle != null && lastDoneAt > 0) {
                 if (isNotEmpty()) append(" · ")
                 append("刚完成「").append(lastDoneTitle.take(18)).append("」")
             }
-            append(if (isEmpty()) "" else " · ").append("已连接 ").append(host)
+            // host 自己就带着「已连接 192.168.31.221（局域网）」/「未连接 · 隧道没启动」，
+            // 这里只负责连接符 —— 再套一层「已连接」会变成「已连接 未连接…」。
+            append(if (isEmpty()) "" else " · ").append(host)
         }
 
         fun detail(host: String): String = buildString {
@@ -402,12 +454,54 @@ object SessionWatcher {
         runCatching { api?.answerApproval(ask, allow) }
     }
 
+    /**
+     * 用宿主上报的整份快照判定「谁跑完了」。
+     *
+     * 这是完成通知的**唯一权威来源**：快照覆盖全部工作区（session/list 只有
+     * 当前工作区），并且每条会话自带标题与「待完成」—— 所以另一个工作区的
+     * 会话跑完会通知，通知正文里也有待完成。
+     */
+    fun onSnapshot(state: WidgetState) {
+        val prev = synchronized(this) { snapRunning }
+        val cur = HashMap<String, Boolean>(32)
+        val spaces = ArrayList<Summary.Space>(4)
+        // (会话 id, 工作区名, 这条会话的待完成)
+        val done = ArrayList<Triple<String, String, List<String>>>(2)
+        for (ws in state.workspaces) {
+            var live = 0
+            for (s in ws.sessions) {
+                cur[s.id] = s.isRunning
+                if (s.isRunning) live++
+                if (prev?.get(s.id) == true && !s.isRunning) {
+                    done.add(Triple(s.id, ws.title, s.todo))
+                }
+            }
+            spaces.add(Summary.Space(ws.title, live, ws.sessionCount))
+        }
+        synchronized(this) {
+            snapRunning = cur
+            snapSpaces = spaces
+            for (ws in state.workspaces) for (s in ws.sessions) {
+                if (s.title.isNotBlank()) titles[s.id] = s.title
+            }
+            if (lastDoneAt.size > 200) {
+                val now = System.currentTimeMillis()
+                lastDoneAt.entries.removeIf { now - it.value > 600_000L }
+            }
+        }
+        for ((id, space, todo) in done) push(id, Kind.Done, null, space = space, todo = todo)
+        refreshSummary()
+    }
+
     /** 把三处状态汇总成常驻通知要的一行字，并原地刷新通知。 */
     private fun refreshSummary() {
         val ctx = appContext ?: return
         val s = synchronized(this) {
+            val spaces = snapSpaces
             Summary(
-                running = running.size,
+                // 有快照就用快照的总数（覆盖全部工作区）；还没有快照时退回事件流。
+                running = if (spaces.isEmpty()) running.size else spaces.sumOf { it.running },
+                spaces = spaces,
                 approvals = _approvals.value.size,
                 lastDoneTitle = _notices.value.firstOrNull { it.kind == Kind.Done }?.title,
                 lastDoneAt = _notices.value.firstOrNull { it.kind == Kind.Done }?.at ?: 0L,
@@ -417,7 +511,9 @@ object SessionWatcher {
         }
         if (_summary.value == s) return          // 没变就别刷，省电
         _summary.value = s
-        NotificationCenter.updateForeground(ctx, currentHost, s)
+        // ★ 通道标签每次现算：服务 onCreate 时闭包下来的 host 会过时 ——
+        //   清掉通知后重贴的那条就写着错的通道（bug 1）。
+        NotificationCenter.updateForeground(ctx, WidgetRefresher.channelLabel(ctx), s)
         // 桌面上放着小组件的话，一起刷新 —— 那是最常被瞟一眼的地方
         DshWidgetProvider.update(ctx, s)
         // 会话版的卡片还要会话列表/上下文/余额，这些只有 widget 端点有；
@@ -475,7 +571,7 @@ object SessionWatcher {
             running.addAll(snap.running)
             gone
         }
-        for (id in finished) push(id, Kind.Done, null)
+        appContext?.let { ctx -> for (id in finished) hydrateAndPush(ctx, id) }
         refreshSummary()
     }
 
@@ -516,7 +612,7 @@ object SessionWatcher {
             running.addAll(snap.running)
             gone
         }
-        for (id in finished) push(id, Kind.Done, null)
+        appContext?.let { ctx -> for (id in finished) hydrateAndPush(ctx, id) }
         refreshSummary()
     }
 
@@ -536,7 +632,11 @@ object SessionWatcher {
                     }
                 }
                 if (!isRunning && wasRunning) {
-                    push(sessionId, Kind.Done, null)
+                    // 事件比快照早到：这一刻还没有标题和「待完成」，
+                    // 先拉一次快照再弹，否则通知正文是空的。
+                    val ctx = appContext
+                    if (ctx == null) push(sessionId, Kind.Done, null)
+                    else hydrateAndPush(ctx, sessionId)
                 }
                 refreshSummary()
             }
@@ -559,19 +659,63 @@ object SessionWatcher {
         }
     }
 
-    private fun push(sessionId: String, kind: Kind, detail: String?) {
-        val title = synchronized(this) { titles[sessionId] }
+    /**
+     * 收到「跑完了」但手上没有完整数据：先拉一次 widget 快照，
+     * 拿到这条会话的标题 / 待完成 / 工作区名再弹通知。
+     *
+     * 拉不到（离线、锁定）也不能丢通知 —— 退回当前已知信息。
+     */
+    private fun hydrateAndPush(ctx: Context, sessionId: String) {
+        scope.launch(Dispatchers.IO) {
+            val st = runCatching { WidgetRefresher.fetchNow(ctx) }.getOrNull()
+            if (st != null) onSnapshot(st)   // 快照差集里若包含这条，它自己会弹
+            val already = synchronized(this@SessionWatcher) {
+                lastDoneAt[sessionId]?.let { System.currentTimeMillis() - it < DONE_DEDUPE_MS }
+            } == true
+            if (already) return@launch
+            var space: String? = null
+            var todo: List<String>? = null
+            st?.workspaces?.forEach { ws ->
+                ws.sessions.firstOrNull { it.id == sessionId }?.let {
+                    space = ws.title
+                    todo = it.todo
+                }
+            }
+            push(sessionId, Kind.Done, null, space = space, todo = todo)
+        }
+    }
+
+    private fun push(
+        sessionId: String,
+        kind: Kind,
+        detail: String?,
+        space: String? = null,
+        todo: List<String>? = null,
+    ) {
+        val now = System.currentTimeMillis()
+        // 两条通路（WS 事件 / 快照差集）都会报同一件事，15 s 内只弹一条。
+        if (kind == Kind.Done) {
+            val last = synchronized(this) { lastDoneAt[sessionId] }
+            if (last != null && now - last < DONE_DEDUPE_MS) return
+            synchronized(this) { lastDoneAt[sessionId] = now }
+        }
+        val base = synchronized(this) { titles[sessionId] }
             ?: "会话 ${sessionId.removePrefix("session-").take(8)}"
+        // 两个工作区同时用时，「second · xxx」比光一个会话名有用得多
+        val title = if (space.isNullOrBlank()) base else "$space · $base"
 
         val notice = Notice(
-            id = "$sessionId-${System.currentTimeMillis()}",
+            id = "$sessionId-$now",
             sessionId = sessionId,
             title = title,
-            at = System.currentTimeMillis(),
+            at = now,
             kind = kind,
+            space = space,
             // 按会话取「待完成」：全局聚合会把别的会话的待办写进这条通知。
             detail = run {
-                val mine = WidgetRefresher.todoFor(sessionId)
+                // 优先用快照里这条会话自己的「待完成」；没有才退回缓存按会话取。
+                val mine = todo?.takeIf { it.isNotEmpty() }
+                    ?: WidgetRefresher.todoFor(sessionId)
                 if (mine.isEmpty()) detail
                 else buildString {
                     append("待完成：")

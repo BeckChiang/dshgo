@@ -39,7 +39,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun TsTunnelSection() {
     val ctx = LocalContext.current
-    var state by remember { mutableStateOf(TsTunnel.state(ctx)) }
+    // 状态文案统一由 TsTunnel.statusText 给（三分：未启动 / 未连接 / 已连接）
     var address by remember { mutableStateOf(TsTunnel.selfAddress(ctx)) }
     var tunnelled by remember { mutableStateOf(TsTunnel.tunUp()) }
 
@@ -47,7 +47,6 @@ fun TsTunnelSection() {
     // 不做事件总线 —— 这条状态 2 秒刷一次的开销可以忽略。
     LaunchedEffect(Unit) {
         while (true) {
-            state = TsTunnel.state(ctx)
             address = TsTunnel.selfAddress(ctx)
             tunnelled = TsTunnel.tunUp()
             if (tunnelled) TsTunnel.clearError(ctx)
@@ -68,17 +67,18 @@ fun TsTunnelSection() {
                 Column(Modifier.weight(1f)) {
                     Text(
                         buildString {
-                            append(tsStateText(state))
-                            if (state == "Running" && address.isNotBlank()) append(" · ").append(address)
+                            append(TsTunnel.statusText(ctx))
+                            // 只有真连上才报地址：显示一个用不了的 100.x 只会误导人
+                            if (tunnelled && address.isNotBlank()) append(" · ").append(address)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(2.dp))
-                    val tsError = if (tunnelled) "" else com.dshgo.app.tunnel.TsTunnel.lastError(ctx)
+                    val tsError = if (tunnelled) "" else TsTunnel.lastError(ctx)
                     Text(
                         if (tsError.isNotBlank()) tsError + "（点「管理」重新授权）"
-                        else "隧道只接入本应用，不影响其它 App；与系统 Tailscale 不能同时开。",
+                        else TsTunnel.hint(ctx),
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                         color = if (tsError.isNotBlank()) DshColor.Danger
                         else MaterialTheme.colorScheme.onSurfaceVariant,

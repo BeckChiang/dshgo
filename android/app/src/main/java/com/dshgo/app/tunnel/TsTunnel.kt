@@ -25,6 +25,12 @@ object TsTunnel {
     private const val PREF_WANT = "ts_want"
     private const val PREF_REBUILD = "ts_last_rebuild"
 
+    /** 上一次「自动拉起」的时间（60 s 节流，避免和系统回收打架）。 */
+    private const val PREF_AUTOSTART = "ts_last_autostart"
+
+    /** 见过一次隧道真正建立 —— 之后才允许自动拉起。 */
+    private const val PREF_EVER = "ts_ever"
+
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences("dshgo_tunnel", Context.MODE_PRIVATE)
 
@@ -98,6 +104,7 @@ object TsTunnel {
         if (!want) return false
         if (runCatching { tunUp() }.getOrDefault(false)) {
             clearError(ctx)
+            markEverConnected(ctx)
             return false
         }
         // 不能拿「引擎状态」当门槛：VpnService 被系统单独回收时引擎往往还活着，
@@ -111,6 +118,76 @@ object TsTunnel {
         com.dshgo.app.data.EventLog.event(ctx, "tunnel", "rebuild: tun missing, state=$st")
         start(ctx)
         return true
+    }
+
+    /** 记下「这台手机上隧道真的连通过」——自动拉起只对这类设备生效。 */
+    fun markEverConnected(ctx: Context) {
+        if (!prefs(ctx).getBoolean(PREF_EVER, false)) {
+            prefs(ctx).edit().putBoolean(PREF_EVER, true).apply()
+        }
+    }
+
+    fun everConnected(ctx: Context): Boolean = prefs(ctx).getBoolean(PREF_EVER, false)
+
+    /**
+     * 该有隧道却没有 → 自己拉起来（60 s 节流）。
+     *
+     * 场景（用户 2026-11-12 报的第 4 条）：出门切到蜂窝，或者先用过别的 VPN，
+     * 系统的 VpnService 被顶掉/回收；只靠 15 s 看门狗不够 —— 进程被杀后
+     * 看门狗也不在，回到 App 时隧道还是「没启动」。
+     *
+     * 只对**曾经连通过**的设备生效：从没登录过就强行 start 会把一个空引擎
+     * 拉起来白耗电，还会弹授权框打断用户。
+     */
+    fun autostart(ctx: Context): Boolean {
+        if (runCatching { tunUp() }.getOrDefault(false)) {
+            markEverConnected(ctx)
+            return false
+        }
+        if (!wantsTunnel(ctx) && !everConnected(ctx)) return false
+        val now = System.currentTimeMillis()
+        if (now - prefs(ctx).getLong(PREF_AUTOSTART, 0L) < 60_000L) return false
+        prefs(ctx).edit().putLong(PREF_AUTOSTART, now).apply()
+        com.dshgo.app.data.EventLog.event(
+            ctx, "tunnel", "autostart: tun missing (engine=${engineUp(ctx)})",
+        )
+        start(ctx)
+        return true
+    }
+
+    /**
+     * 隧道状态的人话版，**三分**：没启动 / 连不上 / 已连接。
+     *
+     * 以前设置里只把后端状态（Running/Stopped…）和 tunUp 混在一起说，
+     * 用户看不出「隧道根本没起」和「起了但没连上」的区别（bug 4）。
+     */
+    fun statusText(ctx: Context): String {
+        val st = state(ctx)
+        val tun = runCatching { tunUp() }.getOrDefault(false)
+        return when {
+            tun && st == "Running" -> "已连接"
+            tun && st == "Starting" -> "隧道已建立，正在连后端"
+            tun -> "隧道已建立，后端未连接"
+            needsConsent(ctx) != null -> "未连接 · 需要重新授权"
+            !engineUp(ctx) -> "未启动"
+            st == "NeedsLogin" -> "未连接 · 需要登录"
+            st == "Starting" -> "未连接 · 正在启动"
+            st.isNotBlank() -> "未连接 · $st"
+            else -> "未连接"
+        }
+    }
+
+    /** 设置里第二行的说明 —— 按当前卡在哪一步给下一步动作。 */
+    fun hint(ctx: Context): String {
+        val tun = runCatching { tunUp() }.getOrDefault(false)
+        return when {
+            tun -> "隧道只接入本应用，不影响其它 App；与系统 Tailscale 不能同时开。"
+            needsConsent(ctx) != null ->
+                "隧道没启动：Android 只允许一个 VPN，用过别的 VPN 后要把授权还回来。点「管理」授权，之后会自动重连。"
+            !engineUp(ctx) -> "隧道没启动。出门（蜂窝 / 别人的 Wi-Fi）时点「管理」启动；同一网段可不用。"
+            state(ctx) == "NeedsLogin" -> "隧道进程在，但还没登录 Tailscale。点「管理」登录一次即可。"
+            else -> "隧道进程在，但没连上后端（登录过期或网络不通）。点「管理」重建。"
+        }
     }
 
     /** 交互式登录地址（登录后引擎会自己拿到节点）。 */

@@ -52,14 +52,13 @@ class WatchService : Service() {
         super.onCreate()
 
         val prefs = Prefs(this)
-        val host = runCatching {
-            java.net.URI(prefs.entryUrl()).host
-        }.getOrNull() ?: prefs.entryUrl()
+        // 不再在这里算一次 host 闭包进循环：清掉通知后重贴时必须按**当下**
+        // 实际连上的通道重算，否则会写着「隧道」而其实走局域网（bug 1）。
 
         runCatching {
             startForeground(
                 NOTIF_ID,
-                NotificationCenter.foreground(this, host, SessionWatcher.summary.value),
+                NotificationCenter.foreground(this, WidgetRefresher.channelLabel(this), SessionWatcher.summary.value),
             )
         }
 
@@ -81,6 +80,10 @@ class WatchService : Service() {
             val cm = getSystemService(android.net.ConnectivityManager::class.java)
             cm?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: android.net.Network) {
+                    // 切网络（家里 → 蜂窝 / 先开了别的 VPN）后隧道最容易掉，
+                    // 这里立刻补一次自动拉起，别等 15 s 那一拍。
+                    runCatching { TsTunnel.autostart(this@WatchService) }
+                    runCatching { TsTunnel.ensureTunnel(this@WatchService) }
                     com.dshgo.app.data.EventLog.event(this@WatchService, "net", "default network changed")
                     runCatching { WidgetRefresher.refresh(this@WatchService, force = true) }
                 }
@@ -91,9 +94,11 @@ class WatchService : Service() {
             var tick = 0
             while (isActive) {
                 delay(15_000)
+                // bug 4：登录过隧道但 TUN 不见了 → 自己拉起来（60 s 节流）。
+                runCatching { TsTunnel.autostart(this@WatchService) }
                 runCatching { TsTunnel.ensureTunnel(this@WatchService) }
                 // 常驻通知可能被「清除全部」或系统清理掉，但服务还活着 —— 补回去。
-                runCatching { reassertForeground(host) }
+                runCatching { reassertForeground() }
                 runCatching { WidgetRefresher.tick(this@WatchService) }
                 if (++tick % 4 == 0) {
                     runCatching { WidgetRefresher.refresh(this@WatchService) }
@@ -103,13 +108,18 @@ class WatchService : Service() {
     }
 
     /** 常驻通知不在通知栏里就重新贴一条（同 id 原地更新，不会重复）。 */
-    private fun reassertForeground(host: String) {
+    private fun reassertForeground() {
         val live = runCatching {
             NotificationManagerCompat.from(this).activeNotifications.any { it.id == NOTIF_ID }
         }.getOrDefault(true)
         if (live) return
         runCatching {
-            startForeground(NOTIF_ID, NotificationCenter.foreground(this, host, SessionWatcher.summary.value))
+            startForeground(
+                NOTIF_ID,
+                NotificationCenter.foreground(
+                    this, WidgetRefresher.channelLabel(this), SessionWatcher.summary.value,
+                ),
+            )
             com.dshgo.app.data.EventLog.event(this, "notify", "foreground notification restored")
         }
     }
