@@ -1,8 +1,11 @@
 package com.dshgo.app
 
+import android.app.Notification
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationManagerCompat
 import com.dshgo.app.notify.NotificationCenter
@@ -56,8 +59,7 @@ class WatchService : Service() {
         // 实际连上的通道重算，否则会写着「隧道」而其实走局域网（bug 1）。
 
         runCatching {
-            startForeground(
-                NOTIF_ID,
+            startForegroundTyped(
                 NotificationCenter.foreground(this, WidgetRefresher.channelLabel(this), SessionWatcher.summary.value),
             )
         }
@@ -107,6 +109,43 @@ class WatchService : Service() {
         }
     }
 
+    /**
+     * API 34 起 startForeground 必须显式带类型。这里固定传 specialUse：
+     * 清单里声明的也是 specialUse，显式传一次是为了不让系统或后续改动
+     * 把它推断回 dataSync —— 那个类型有 24 小时累计 6 小时的配额。
+     */
+    private fun startForegroundTyped(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIF_ID, notification)
+        }
+    }
+
+    /**
+     * 前台服务被系统判定超时时的回调（API 34+ 单参、API 35+ 带类型）。
+     *
+     * dataSync 超时会走到这里；不自己停就抛
+     * ForegroundServiceDidNotStopInTimeException 直接崩进程。
+     * 现在服务用的是 specialUse，正常不该触发，留着是为了万一被判定超时
+     * 也能体面退出（下次打开 App 或开机由 BootReceiver 再拉起），而不是崩掉。
+     */
+    override fun onTimeout(startId: Int) {
+        shutdownAfterSystemTimeout("single-arg timeout")
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        shutdownAfterSystemTimeout("timeout fgsType=$fgsType")
+    }
+
+    private fun shutdownAfterSystemTimeout(reason: String) {
+        runCatching {
+            com.dshgo.app.data.EventLog.event(this, "service", "watch service stopped by system: $reason")
+        }
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        stopSelf()
+    }
+
     /** 常驻通知不在通知栏里就重新贴一条（同 id 原地更新，不会重复）。 */
     private fun reassertForeground() {
         val live = runCatching {
@@ -114,8 +153,7 @@ class WatchService : Service() {
         }.getOrDefault(true)
         if (live) return
         runCatching {
-            startForeground(
-                NOTIF_ID,
+            startForegroundTyped(
                 NotificationCenter.foreground(
                     this, WidgetRefresher.channelLabel(this), SessionWatcher.summary.value,
                 ),

@@ -24,7 +24,6 @@
     <!-- 保活：后台也要能收到「会话跑完了」，否则进程被冻结就收不到 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- API < 29 下载到公共 Downloads 目录才需要；29+ 走 MediaStore 免权限 -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -106,10 +105,20 @@
             android:label="@string/tunnel_page_title"
             android:theme="@style/AppTheme" />
 
+        <!-- 保活服务要长期活着（常驻通知 + 隧道看门狗 + 小组件刷新）。
+             不能用 dataSync：Android 15 起它按 App 计 24 小时内累计 6 小时的配额，
+             超时后系统调 onTimeout()，服务不自己停就抛
+             ForegroundServiceDidNotStopInTimeException 把进程干掉
+             （2026-11-13 在 SM-F9660 / Android 16 上真崩过一次，设备闲置一夜正好攒满）。
+             specialUse 没有时长限制，用途写在下面的 property 里。 -->
         <service
             android:name=".WatchService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="session-notifications-and-widget-sync" />
+        </service>
 
         <!-- 小组件会话列表的集合视图数据源（RemoteViewsService）。
              BIND_REMOTEVIEWS 权限是系统要求的：只有桌面启动器能绑定它，

@@ -63,7 +63,7 @@
     }
   },
   "dshgo": {
-    "appVersion": "4.5.0-beck.55",
+    "appVersion": "4.5.0-beck.56",
     "appApk": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk",
     "appApkFallback": "https://github.com/BeckChiang/dshgo/releases/latest/download/FnhGo-latest.apk"
   }

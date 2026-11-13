@@ -75,8 +75,12 @@ POST /api/$events/result
 ### 后台怎么活下来
 
 app 退到后台几分钟就会被系统冻结，WebSocket 断掉，通知只能等你重新打开 app 才补上 ——
-那就没意义了。所以开通知时会起一个 `WatchService`（`foregroundServiceType="dataSync"`），
+那就没意义了。所以开通知时会起一个 `WatchService`（`foregroundServiceType="specialUse"`），
 代价是一条最低优先级的常驻通知，不响不震。关掉通知开关时服务一并停止。
+
+> 别改回 `dataSync`：Android 15 起该类型按 App 计 24 小时内累计 6 小时配额，
+> 超时后系统调 `onTimeout()`，服务不自停就抛 `ForegroundServiceDidNotStopInTimeException`
+> 把进程干掉（beck.55 在 Android 16 上真崩过一次）。`specialUse` 没有时长限制。
 
 ### 点通知怎么跳到会话
 
