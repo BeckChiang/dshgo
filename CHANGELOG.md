@@ -8,6 +8,13 @@
 两者互不约束：插件改了不一定要出 App，App 改了也不一定要动插件。
 App 在设备列表/设备详情里显示的 `vX.Y.Z` 就是这里读到的插件版本（`/__dshgo__/info` 的 `version`）。
 
+## 2.1.3 — 2026-11-19
+
+- 「局域网地址」只报真实网卡：TUN/TAP（Clash / mihomo 的 Meta Tunnel、OpenVPN、WireGuard）、Hyper-V / WSL、VMware / VirtualBox、Docker、蓝牙 PAN、Wi-Fi Direct 一律过滤；`198.18.0.0/15`（RFC 2544，Clash 的 fake-ip 网关常见 198.18.0.1）与 `169.254/16` 链路本地地址也不再上报。
+- 现象修复：本机开 Clash TUN 时面板并列两个「局域网地址」，手机 App 记下 `198.18.0.1:3081`——一个只在电脑内部有效的网关地址，之后从局域网再也连不上（Tailscale 那条路还能用）。
+- 地址排序改为 192.168 / 10 / 172.16 → Tailscale → 其它，App 取第一条 `addrs.lan` 时拿到的是真正能连通的那个。
+- Tailscale 判定仍按地址段（100.64/10）而不是网卡名，隧道地址照常留在「Tailscale」分组，不会被这一步过滤掉。
+
 ## 2.1.2
 
 - 「手机 App」卡片不再显示本机局域网入口，改为显示 GitHub 上的安装包地址（`info.app.apk`）——手机要装的是 APK，给局域网地址既会误导，出门也用不了。

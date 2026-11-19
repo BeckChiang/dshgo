@@ -17,6 +17,8 @@ import {
   buildInfoPayload,
   injectPolyfill,
   isTailscaleAddress,
+  isVirtualInterface,
+  usableLanAddresses,
   INJECT_MARK,
   INFO_PATH,
 } from '../lib/proxy.mjs';
@@ -277,6 +279,42 @@ test('Tailscale 地址识别（100.64.0.0/10）', () => {
 
   for (const ip of yes) assert.equal(isTailscaleAddress(ip), true, `${ip} 应判为 Tailscale`);
   for (const ip of no) assert.equal(isTailscaleAddress(ip), false, `${ip} 不应判为 Tailscale`);
+});
+
+test('虚拟网卡与无效地址不进局域网列表', () => {
+  // 真实机器上最常见的「能 ping 通自己、别人连不到」的网卡
+  const nets = [
+    { name: 'Meta', address: '198.18.0.1' }, // Clash/mihomo TUN
+    { name: 'Tailscale', address: '100.75.57.100' }, // 隧道，留作外网通道
+    { name: 'WLAN', address: '192.168.31.221' },
+    { name: 'vEthernet (WSL)', address: '172.30.0.1' },
+    { name: 'VMware Network Adapter VMnet8', address: '192.168.10.1' },
+    { name: '以太网', address: '169.254.9.129' },
+    { name: 'Meta Tunnel', address: '198.19.0.1' },
+    { name: 'WLAN', address: '192.168.31.221' }, // 同一地址重复上报
+  ];
+  assert.deepEqual(
+    usableLanAddresses(nets).map((it) => it.address),
+    ['192.168.31.221', '100.75.57.100'],
+    '只留真实局域网与 Tailscale，且真实局域网排第一',
+  );
+  assert.equal(isVirtualInterface('Meta Tunnel'), true);
+  assert.equal(isVirtualInterface('vEthernet (Default Switch)'), true);
+  assert.equal(isVirtualInterface('WLAN'), false, '物理网卡不能误伤');
+});
+
+test('端点响应体：addrs.lan 不再把虚拟网卡算成局域网', async () => {
+  const info = await buildInfoPayload(
+    { port: 3081, upstreamPort: 3080 },
+    usableLanAddresses([
+      { name: 'Meta', address: '198.18.0.1' },
+      { name: 'Tailscale', address: '100.75.57.100' },
+      { name: 'WLAN', address: '192.168.31.221' },
+    ]),
+  );
+  assert.deepEqual(info.addrs.lan, ['http://192.168.31.221:3081']);
+  assert.deepEqual(info.addrs.tail, ['http://100.75.57.100:3081']);
+  assert.deepEqual(info.tailscale, ['http://100.75.57.100:3081']);
 });
 
 test('端点响应体：区分「代理在跑」和「代理没跑」', async () => {
