@@ -194,8 +194,10 @@ object ConnectionStore {
             if (id != deviceId) continue
             val host = runCatching { java.net.URI(conn.url).host.orEmpty() }.getOrDefault("")
             val isTail = host.startsWith("100.")
-            val reported = (if (isTail) tailUrls else lanUrls)
-                .firstOrNull { it.startsWith("http") } ?: continue
+            // 挑一条真能连的：老版本 PC 插件会把 Clash TUN 的 198.18.0.1 混进
+            // lan 列表，照第一条写就把这条连接改废了（只在 PC 内部有效）。
+            // 一条都挑不出来时保持原地址不动 —— 宁可留着旧地址，也不要清空。
+            val reported = LanUrls.pick(if (isTail) tailUrls else lanUrls) ?: continue
             val normalized = reported.trimEnd('/')
             if (normalized == conn.url) continue
             if (normalized in taken) continue
