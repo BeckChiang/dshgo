@@ -8,6 +8,12 @@
 两者互不约束：插件改了不一定要出 App，App 改了也不一定要动插件。
 App 在设备列表/设备详情里显示的 `vX.Y.Z` 就是这里读到的插件版本（`/__dshgo__/info` 的 `version`）。
 
+## 2.1.4 — 2026-11-20
+
+- 小组件不再列出插件自己开的后台会话：`dsh-mnemon` 的「空闲审查」每跑一次就新建一个 `mnemon-review-v1-<uuid>` 会话，它们在会话存储里是合法会话、也有标题，于是手机小组件里堆满「Mnemon · idle review」。
+- 过滤放在服务端 `lib/widget-state.mjs`（`INTERNAL_SESSION_PREFIXES` + `isInternalSession()`），与已有的「子代理会话 / 预置会话 / 已归档」过滤同一位置，App 无需改代码、也无需重装：DSH 重启后小组件刷新即为干净列表。
+- 计数（`sessionCount`）与列表一致，过滤后不会出现「显示 2 条、计数 5 条」的错位。
+
 ## 2.1.3 — 2026-11-19
 
 - 「局域网地址」只报真实网卡：TUN/TAP（Clash / mihomo 的 Meta Tunnel、OpenVPN、WireGuard）、Hyper-V / WSL、VMware / VirtualBox、Docker、蓝牙 PAN、Wi-Fi Direct 一律过滤；`198.18.0.0/15`（RFC 2544，Clash 的 fake-ip 网关常见 198.18.0.1）与 `169.254/16` 链路本地地址也不再上报。
