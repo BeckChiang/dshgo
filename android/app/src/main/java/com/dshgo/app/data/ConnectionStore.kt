@@ -210,7 +210,35 @@ object ConnectionStore {
         return changed
     }
 
+    /**
+     * 清掉「永远连不上」的地址。
+     *
+     * 老版本把虚拟网卡（Clash TUN 的 `198.18.0.1`、没拿到 DHCP 时的 `169.254.x`）
+     * 当成局域网地址写进了列表，于是首页永远挂着一条点了没反应的死通道。
+     * 这类地址在本机之外**根本不存在**，留着只会让人以为电脑有两条路。
+     *
+     * 只删「不可用」的那几条，且**列表只剩它一条时不动**——宁可留一条坏的，
+     * 也不能把连接清空；当前连接被删时顺延到剩下里最前面（all() 已按最近用过排序）。
+     */
+    fun pruneUnusable(ctx: Context): Int {
+        val list = all(ctx)
+        if (list.size < 2) return 0
+        val doomed = list.filter { !LanUrls.isUsable(hostOf(it.url)) }
+        if (doomed.isEmpty() || doomed.size == list.size) return 0
+        val doomedIds = doomed.map { it.id }.toHashSet()
+        val keep = list.filter { it.id !in doomedIds }
+        persist(ctx, keep)
+        if (sp(ctx).getString(KEY_ACTIVE, null) in doomedIds) {
+            sp(ctx).edit().putString(KEY_ACTIVE, keep.first().id).commit()
+        }
+        return doomed.size
+    }
+
+    private fun hostOf(url: String): String =
+        runCatching { java.net.URI(url).host.orEmpty() }.getOrDefault("")
+
     fun reconcileByDevice(ctx: Context, statuses: Map<String, ConnectionProbe.Status>): Int {
+        pruneUnusable(ctx)
         // deviceId → (lan 列表, tail 列表)：只收「本次确实探通了并且带了身份」的
         val seen = HashMap<String, Pair<List<String>, List<String>>>()
         statuses.values.forEach { st ->
