@@ -5,6 +5,19 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * 插件后台会话的 id 前缀，与服务端 `lib/widget-state.mjs` 的 INTERNAL_SESSION_PREFIXES 对齐。
+ *
+ * 插件会自己开后台会话干活（dsh-mnemon 的空闲审查建 `mnemon-review-v1-*`，
+ * 另一条 run 路径建 `mnemon-run-v1-*`），它们有标题、也算「会话」，但用户眼里
+ * 只有真实对话。服务端 2.1.5 起会过滤；插件更新要重启 DSH 才生效，App 这边再
+ * 兜一层，哪边没更新列表都不会被这些行铺满。
+ */
+private val INTERNAL_SESSION_PREFIXES = listOf("mnemon-review-v1-", "mnemon-run-v1-")
+
+internal fun isInternalSession(id: String): Boolean =
+    INTERNAL_SESSION_PREFIXES.any { id.startsWith(it) }
+
+/**
  * 小组件一屏要显示的数据 —— `/__dshgo__/widget/state` 的本地模型。
  *
  * 为什么单独建模型而不是让 RemoteViews 直接读 JSON：
@@ -137,6 +150,7 @@ data class WidgetState(
                 val s = arr.optJSONObject(i) ?: continue
                 val id = s.optString("id")
                 if (id.isEmpty()) continue
+                if (isInternalSession(id)) continue
                 out.add(
                     Session(
                         id = id,
@@ -237,7 +251,7 @@ object WidgetStateStore {
         var added = 0
         val spaces = fresh.workspaces.map { ws ->
             val old = previous.workspaces.firstOrNull { it.id == ws.id } ?: return@map ws
-            val missing = old.sessions.filter { it.id !in have }
+            val missing = old.sessions.filter { it.id !in have && !isInternalSession(it.id) }
             if (missing.isEmpty()) ws else { added += missing.size; ws.copy(sessions = ws.sessions + missing) }
         }
         return if (added == 0) fresh else fresh.copy(workspaces = spaces)

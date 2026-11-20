@@ -42,6 +42,7 @@ function services(records) {
 
 test('内部会话前缀识别', () => {
   assert.equal(isInternalSession('mnemon-review-v1-0f62f101-4560-4317-a2b5-530bf461fb2b'), true);
+  assert.equal(isInternalSession('mnemon-run-v1-0d961c4f-08c4-4bf7-8177-3214036cc065'), true, 'run 这一族同样要挡');
   assert.equal(isInternalSession('dsh-mnemon-review'), false, '只是含关键字，不以前缀开头就不算');
   assert.equal(isInternalSession('9f2c1a4e-1111-2222-3333-444455556666'), false);
   assert.equal(isInternalSession(''), false);

@@ -8,6 +8,11 @@
 两者互不约束：插件改了不一定要出 App，App 改了也不一定要动插件。
 App 在设备列表/设备详情里显示的 `vX.Y.Z` 就是这里读到的插件版本（`/__dshgo__/info` 的 `version`）。
 
+## 2.1.5 — 2026-11-20
+
+- 补齐内部会话前缀：`dsh-mnemon` 除了 `mnemon-review-v1-<uuid>`（空闲审查），还会建 `mnemon-run-v1-<uuid>`（自建 run 会话）。2.1.4 只挡了前者，本机实测库里两族并存（review 63 个、run 35 个），所以过滤后小组件里仍剩一堆「Mnemon · idle review」。
+- `INTERNAL_SESSION_PREFIXES` 现为 `['mnemon-review-v1-', 'mnemon-run-v1-']`；`isInternalSession()` 逻辑不变，仍是纯前缀匹配（标题文本两族区分不开，不能按标题过滤）。
+
 ## 2.1.4 — 2026-11-20
 
 - 小组件不再列出插件自己开的后台会话：`dsh-mnemon` 的「空闲审查」每跑一次就新建一个 `mnemon-review-v1-<uuid>` 会话，它们在会话存储里是合法会话、也有标题，于是手机小组件里堆满「Mnemon · idle review」。
