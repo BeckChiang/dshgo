@@ -38,6 +38,14 @@ object WidgetRefresher {
     private var pending = false
     private var lastStartAt = 0L
 
+    /**
+     * 连续失败次数，用来做退避。
+     *
+     * 之前失败是「立刻补跑」的：一轮要等两个 5 秒超时，刚结束又开一轮，日志里
+     * 每 5 秒一条 `try` —— 手机一直发热、耗电，桌面卡片却始终是「未连接」。
+     */
+    private var failStreak = 0
+
     /** 最近一次拉取结果，供 provider 选择降级文案（「未连接」 vs「已锁定」）。 */
     @Volatile
     var lastOutcome: Outcome = Outcome.Unknown
@@ -289,10 +297,15 @@ object WidgetRefresher {
         }
         synchronized(this) {
             val now = System.currentTimeMillis()
-            if (!force && (inFlight?.isActive == true || now - lastStartAt < MIN_INTERVAL_MS)) {
+            // 失败后指数退避：15s → 30s → 60s → 120s 封顶。
+            // 以前失败也是「立刻补跑」，一轮要等两个 5 秒超时，日志里几乎每 5 秒一条 try，
+            // 手机一直发热耗电，卡片却始终「未连接」。
+            val gap = if (failStreak == 0) MIN_INTERVAL_MS else minOf(MIN_INTERVAL_MS shl minOf(failStreak, 3), 120_000L)
+            val flying = inFlight?.isActive == true
+            if (flying || (now - lastStartAt < gap && (failStreak > 0 || !force))) {
                 // 丢掉请求就等于丢掉一次状态变化（用户看到「在跑 1 个」但行还是旧的）。
-                // 记下来，等这一轮结束后补一次；force 的请求不排队（本来就是为了立刻看）。
-                if (inFlight?.isActive == true) pending = true
+                // 记下来，等这一轮结束后补一次；force 只在健康时不排队（本来就是为了立刻看）。
+                if (flying) pending = true
                 // 被节流也要重绘一次：statusText() 会随时间从「检查中」变「超时」，
                 // 不重绘就停在旧字上（用户 21:42 截图就是这个）。
                 DshWidgetProvider.update(app, SessionWatcher.summary.value)
@@ -305,6 +318,7 @@ object WidgetRefresher {
                         WidgetStateStore.save(app, r.raw)
                         lastState = runCatching { com.dshgo.app.data.WidgetState.parse(org.json.JSONObject(r.raw)) }.getOrNull()
                         lastOutcome = Outcome.Ok
+                        failStreak = 0
                         lastError = ""
                         lastOkBase = r.base
                         lastOkAt = System.currentTimeMillis()
@@ -326,11 +340,13 @@ object WidgetRefresher {
                     WidgetStateClient.Result.Locked -> {
                         lastOutcome = Outcome.Locked
                         lastError = "需要解锁"
+                        failStreak = minOf(failStreak + 1, 4)
                     }
                     is WidgetStateClient.Result.Failed -> {
                         // 失败不删缓存：上一次的数据比「未连接」有用得多。
                         lastOutcome = Outcome.Offline
                         lastError = shortReason(r.message)
+                        failStreak = minOf(failStreak + 1, 4)
                         // 所有候选都连不上：电脑可能换了网段（DHCP 续租、路由器重启）。
                         // 扫本网段找 3081（仅 Wi-Fi，内部 60 s 节流，最坏 3 s）。
                         runCatching { com.dshgo.app.data.NetScan.scanIfDue(app) }
@@ -340,14 +356,15 @@ object WidgetRefresher {
                 EventLog.event(
                     app,
                     "widget",
-                    "done $lastOutcome err=${lastError.take(30)} base=${lastOkBase.take(40)}",
+                    "done $lastOutcome streak=$failStreak err=${lastError.take(30)} base=${lastOkBase.take(40)}",
                 )
                 DshWidgetProvider.update(app, SessionWatcher.summary.value)
                 ScheduleWidgetProvider.update(app)
                 if (pending) {
                     pending = false
                     // 补跑一次：这一轮拿到的可能是变化之前的状态。
-                    refresh(app, force = true)
+                    // 只在健康时补 —— 失败时再补就是自己追自己，永远停不下来。
+                    if (lastOutcome == Outcome.Ok) refresh(app, force = true)
                 }
             }
         }

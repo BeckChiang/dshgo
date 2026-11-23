@@ -1,6 +1,9 @@
 package com.dshgo.app.data
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.webkit.CookieManager
 import com.dshgo.app.Prefs
@@ -155,12 +158,12 @@ object WidgetStateClient {
     /** 单条地址的抓取 + 解锁重试。 */
     private suspend fun fetchOne(ctx: Context, base: String): Result = withContext(Dispatchers.IO) {
         try {
-            var (code, body) = get("$base$PATH?sessions=$SESSION_LIMIT")
+            var (code, body) = get(ctx, "$base$PATH?sessions=$SESSION_LIMIT")
             // 未解锁：401 + {"error":{"code":"locked"},"needAuth":true}。
             // 复用 App 里已保存的访问密码解锁一次再重试；拿不到密码就算 locked。
             if (code == 401 || (code == 403 && body.contains("needAuth"))) {
                 if (!tryUnlock(ctx, base)) return@withContext Result.Locked
-                val retry = get("$base$PATH?sessions=$SESSION_LIMIT")
+                val retry = get(ctx, "$base$PATH?sessions=$SESSION_LIMIT")
                 code = retry.first
                 body = retry.second
             }
@@ -190,16 +193,43 @@ object WidgetStateClient {
         }
     }
 
-    private fun get(url: String): Pair<Int, String> {
+    private fun get(ctx: Context, url: String): Pair<Int, String> {
         val req = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
             // 桌面端代理会看 UA 区分「dshgo 客户端」，沿用 UnlockClient 的写法
             .header("User-Agent", UnlockClient.UA)
             .build()
-        client.newCall(req).execute().use { resp ->
+        val http = if (AutoRoute.isLanUrl(url)) physicalClient(ctx) ?: client else client
+        http.newCall(req).execute().use { resp ->
             return resp.code to (resp.body?.string() ?: "")
         }
+    }
+
+    /**
+     * 局域网目标要绑物理网卡再发。
+     *
+     * 内嵌 Tailscale 一开就是「全量接管」，局域网目的地址也会被塞进 tun；
+     * 而 tailnet 不认识 192.168.31.0/24，SYN 直接沉底 —— 表现就是「连 3081 超时」。
+     * 前台 WebView 因为有既存连接看着正常，后台小组件每次新建连接就全挂。
+     * 绑定到 Wi-Fi/以太网（退而求其次蜂窝）的 socketFactory 可以绕开 VPN 直连。
+     */
+    private fun physicalClient(ctx: Context): OkHttpClient? {
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return null
+        fun caps(n: Network): NetworkCapabilities? = cm.getNetworkCapabilities(n)
+        val networks = runCatching { cm.allNetworks.toList() }.getOrDefault(emptyList())
+        val net = networks.firstOrNull { n ->
+            val c = caps(n) ?: return@firstOrNull false
+            !c.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                (c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+        } ?: networks.firstOrNull { n ->
+            val c = caps(n) ?: return@firstOrNull false
+            !c.hasTransport(NetworkCapabilities.TRANSPORT_VPN) && c.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+        } ?: return null
+        return client.newBuilder()
+            .socketFactory(net.socketFactory)
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .build()
     }
 
     /**
