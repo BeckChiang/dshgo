@@ -2,6 +2,7 @@ package com.dshgo.app.notify
 
 import android.content.Context
 import com.dshgo.app.Prefs
+import com.dshgo.app.data.EventLog
 import com.dshgo.app.data.WidgetDevice
 import com.dshgo.app.data.WidgetStateClient
 import com.dshgo.app.data.WidgetStateStore
@@ -283,6 +284,7 @@ object WidgetRefresher {
         if (WidgetDevice.url(app).isBlank()) {
             lastOutcome = Outcome.Offline
             lastError = "未配置地址"
+            EventLog.event(app, "widget", "no-url")
             return
         }
         synchronized(this) {
@@ -335,6 +337,11 @@ object WidgetRefresher {
                     }
                 }
                 // 无论成败都重绘：成功换新数据，失败退回缓存/降级文案。
+                EventLog.event(
+                    app,
+                    "widget",
+                    "done $lastOutcome err=${lastError.take(30)} base=${lastOkBase.take(40)}",
+                )
                 DshWidgetProvider.update(app, SessionWatcher.summary.value)
                 ScheduleWidgetProvider.update(app)
                 if (pending) {

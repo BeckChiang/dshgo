@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dshgo.app.data.CrashCenter
 import com.dshgo.app.data.EventLog
+import com.dshgo.app.notify.WidgetRefresher
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,6 +44,15 @@ fun DiagnosticsSection() {
     var items by remember { mutableStateOf(CrashCenter.recent(ctx, 3)) }
 
     SettingsGroupTitle("诊断")
+    Spacer(Modifier.height(8.dp))
+    // 小组件拉不到数据时，用户只看到「未连接」；这里把最近一次的结论直接写出来，
+    // 省得每次都要翻事件流水才看得出是哪一步断的。
+    val widgetBase = WidgetRefresher.lastOkBase.removePrefix("https://").removePrefix("http://").trimEnd('/')
+    Text(
+        "小组件：${WidgetRefresher.statusText(ctx)}" + if (widgetBase.isBlank()) "" else " · $widgetBase",
+        style = MaterialTheme.typography.labelSmall,
+        fontSize = 11.sp,
+    )
     Spacer(Modifier.height(8.dp))
     Surface(
         modifier = Modifier.fillMaxWidth(),

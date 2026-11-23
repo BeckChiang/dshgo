@@ -60,8 +60,14 @@ object WidgetStateClient {
         // 用户在 App 里「明明连着」，小组件却因为挑了另一条（比如在外网挑局域网）
         // 报「未连接」—— 这是最常被吐槽的那个不一致。
         val preferred = WidgetDevice.candidates(ctx)
-        if (preferred.isEmpty()) return@withContext Result.Failed("未配置入口地址")
+        if (preferred.isEmpty()) {
+            EventLog.event(ctx, "widget", "no-candidates")
+            return@withContext Result.Failed("未配置入口地址")
+        }
         val bases = reorderByReachability(preferred)
+        // 小组件失败以前完全静默：用户只看到「未连接」，日志里一个字都没有，
+        // 根本分不清是地址没配、网络不通还是端点报错。每次尝试都落一条。
+        EventLog.event(ctx, "widget", "try " + bases.joinToString(",") { short(it) })
         // 解锁 cookie 是按 host 存的：在隧道那条地址上解过锁，切到局域网这条就没有，
         // 小组件于是回「需要解锁」，而 App 里点进去是直通的（用户最早报的 R11 同源）。
         // 同一台电脑的两条通道本来就该共用一份凭据，这里先把它搬过去。
@@ -70,10 +76,19 @@ object WidgetStateClient {
         var lastFailure: Result = Result.Failed("未配置入口地址")
         for (base in bases) {
             when (val r = fetchOne(ctx, base)) {
-                is Result.Ok -> return@withContext r
+                is Result.Ok -> {
+                    EventLog.event(ctx, "widget", "ok ${short(base)} ${r.raw.length}b")
+                    return@withContext r
+                }
                 // 锁着说明地址是通的，换一条也一样会被锁，直接返回
-                is Result.Locked -> return@withContext r
-                is Result.Failed -> lastFailure = r
+                is Result.Locked -> {
+                    EventLog.event(ctx, "widget", "locked ${short(base)}")
+                    return@withContext r
+                }
+                is Result.Failed -> {
+                    lastFailure = r
+                    EventLog.event(ctx, "widget", "fail ${short(base)} ${r.message.take(60)}")
+                }
             }
         }
         return@withContext lastFailure
@@ -121,12 +136,16 @@ object WidgetStateClient {
         return if (reachable.isEmpty()) bases else reachable + others
     }
 
+    /** 日志里只写 host:port，别把整条 URL 塞进事件流水。 */
+    private fun short(base: String): String =
+        base.removePrefix("http://").removePrefix("https://").trimEnd('/')
+
     private fun tcpReachable(base: String): Boolean = try {
         val uri = java.net.URI(base)
         val host = uri.host ?: return false
         val port = if (uri.port > 0) uri.port else 80
         java.net.Socket().use { s ->
-            s.connect(java.net.InetSocketAddress(host, port), 350)
+            s.connect(java.net.InetSocketAddress(host, port), 600)
             true
         }
     } catch (_: Throwable) {
@@ -145,15 +164,28 @@ object WidgetStateClient {
                 code = retry.first
                 body = retry.second
             }
-            if (code != 200) return@withContext Result.Failed("HTTP $code")
-            if (!body.trimStart().startsWith("{")) return@withContext Result.Failed("响应不是 JSON")
+            if (code != 200) {
+                EventLog.event(ctx, "widget", "http $code ${body.take(60)}")
+                return@withContext Result.Failed("HTTP $code")
+            }
+            if (!body.trimStart().startsWith("{")) {
+                EventLog.event(ctx, "widget", "not-json ${body.take(60)}")
+                return@withContext Result.Failed("响应不是 JSON")
+            }
             // 只做结构门禁，真正的解析在 WidgetStateStore.load 里；坏数据不落盘。
-            if (!body.contains("\"workspaces\"")) return@withContext Result.Failed("响应缺少 workspaces")
+            if (!body.contains("\"workspaces\"")) {
+                EventLog.event(ctx, "widget", "no-workspaces ${body.take(60)}")
+                return@withContext Result.Failed("响应缺少 workspaces")
+            }
             // 宿主端点自己失败时会回 `{"error":{"code":"widget-state-failed",...}, "workspaces":[]}`
             // —— 这种「空壳」不能覆盖缓存，否则一次服务端 bug 就把卡片清成「这个工作区还没有会话」。
-            if (body.contains("\"widget-state-failed\"")) return@withContext Result.Failed("端点报错")
+            if (body.contains("\"widget-state-failed\"")) {
+                EventLog.event(ctx, "widget", "endpoint-error ${body.take(120)}")
+                return@withContext Result.Failed("端点报错")
+            }
             Result.Ok(body, base)
         } catch (t: Throwable) {
+            EventLog.event(ctx, "widget", "exc ${(t.message ?: t.javaClass.simpleName).take(80)}")
             Result.Failed(t.message ?: t.javaClass.simpleName)
         }
     }
