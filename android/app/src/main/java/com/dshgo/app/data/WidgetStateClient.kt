@@ -28,13 +28,20 @@ object WidgetStateClient {
     /** 拉多少条会话：最多显示 5 条，多拉一点留给「切工作区」后免请求重绘。 */
     private const val SESSION_LIMIT = 20
 
-    /** 小组件场景要快失败：整个调用 ≤ 9s（< 任务要求的 10s）。 */
+    /**
+     * 小组件场景要能等到慢的那一次：宿主侧小组件端点要按会话逐条读投影，
+     * 实测一次 7~18 秒（二十条会话）。读超时压到 5 秒时，手机端永远只见 timeout，
+     * 于是桌面小组件一直显示「未连接」—— 明明网络是通的。
+     *
+     * 所以连接仍要快失败（5 秒够局域网/隧道握手），读和整次调用放宽到十几秒以上；
+     * 服务端也在并行化 + 加缓存，正常情况下秒回，放宽只是给「首次构建」留余量。
+     */
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .cookieJar(WebViewCookies)
             .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.SECONDS)
-            .callTimeout(9, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(30, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
             .build()
     }
