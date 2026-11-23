@@ -2630,6 +2630,10 @@ private fun DeviceDialog(
     val urls = remember(rows) {
         mutableStateMapOf<String, String>().apply { rows.forEach { put(it.id, it.url) } }
     }
+    // 「再加一条地址」：在本地先把空行加上（id 用 new- 占位，保存时才真正落库）。
+    // 以前这个对话框只能改现有行，于是「一台电脑只有一条通道」时用户无路可走。
+    var extras by remember { mutableStateOf(emptyList<Connection>()) }
+    val allRows = rows + extras
     var confirmDelete by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -2642,7 +2646,7 @@ private fun DeviceDialog(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "${rows.size} 条通道 · 同一台电脑",
+                    "${allRows.size} 条通道 · 同一台电脑",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -2650,7 +2654,7 @@ private fun DeviceDialog(
         },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                rows.forEach { row ->
+                allRows.forEach { row ->
                     val st = statuses[row.url]
                     val current = row.id == activeId
                     Surface(
@@ -2720,6 +2724,22 @@ private fun DeviceDialog(
                         }
                     }
                     Spacer(Modifier.height(10.dp))
+                }
+
+                TextButton(
+                    onClick = {
+                        val fresh = Connection(
+                            id = "new-" + System.nanoTime(),
+                            name = "",
+                            url = "",
+                            deviceId = first.deviceId,
+                        )
+                        extras = extras + fresh
+                        urls[fresh.id] = ""
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("＋ 再加一条地址（同一台电脑的另一个入口）")
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -2809,15 +2829,23 @@ private fun DeviceDialog(
             TextButton(
                 onClick = {
                     onSave(
-                        rows.map { row ->
-                            row.copy(
-                                name = name.trim(),
-                                url = Prefs.normalize(urls[row.id] ?: row.url),
-                            )
+                        allRows.map { row ->
+                            val url = Prefs.normalize(urls[row.id] ?: row.url)
+                            if (row.id.startsWith("new-")) {
+                                // 新增行：id 留给存储层生成，带上这台电脑的身份
+                                Connection(
+                                    id = "",
+                                    name = name.trim(),
+                                    url = url,
+                                    deviceId = first.deviceId,
+                                )
+                            } else {
+                                row.copy(name = name.trim(), url = url)
+                            }
                         },
                     )
                 },
-                enabled = rows.all { !urls[it.id].isNullOrBlank() },
+                enabled = allRows.all { !urls[it.id].isNullOrBlank() },
             ) {
                 Text("保存")
             }

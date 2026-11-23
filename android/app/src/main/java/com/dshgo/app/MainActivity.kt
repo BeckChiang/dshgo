@@ -7,6 +7,7 @@ import com.dshgo.app.data.AutoRoute
 import com.dshgo.app.data.NetWatcher
 import com.dshgo.app.data.ConnectionProbe
 import com.dshgo.app.data.Connection
+import com.dshgo.app.data.PairingPayload
 import androidx.biometric.BiometricManager
 import com.dshgo.app.data.UnlockClient
 import com.dshgo.app.data.AppLock
@@ -292,6 +293,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     ) { result ->
         val raw = result.contents
         if (raw.isNullOrBlank()) return@registerForActivityResult
+        // 先试「一次添加全部地址」的载荷：带两条通道的那张码就是它。
+        // 不是这个形状就退回老路 —— 单地址的码、手输的 http://… 都还能用。
+        val pair = PairingPayload.parse(raw)
+        if (pair != null) {
+            connectPair(pair)
+            return@registerForActivityResult
+        }
         val normalized = Prefs.normalize(raw)
         if (normalized.isEmpty()) {
             ui = ui.copy(setupError = "扫到的不是可用的地址：$raw")
@@ -921,6 +929,43 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     // ------------------------------------------------------------------
     // 连接
     // ------------------------------------------------------------------
+
+    /**
+     * 扫码内容是一台电脑的多条地址：全部落库，再连当前网络能用的那条。
+     *
+     * 老版本只认单个地址，换手机时得扫两次，而且第二次只会改入口、第一条还留在列表里
+     * 当另一台设备 —— 用户看到的就是「一台电脑永远只有一条通道」。
+     */
+    private fun connectPair(pair: PairingPayload) {
+        val urls = pair.urls.map { Prefs.normalize(it) }.filter { it.isNotEmpty() }.distinct()
+        if (urls.isEmpty()) {
+            ui = ui.copy(setupError = "二维码里的地址都不能用：${pair.urls.joinToString()}")
+            return
+        }
+        val existing = runCatching { ConnectionStore.all(this) }.getOrDefault(emptyList())
+        for (url in urls) {
+            val hit = existing.firstOrNull { it.url == url }
+            if (hit != null) {
+                // 已经存过这条地址：只补设备身份，别再多出一台「同一台电脑」
+                if (hit.deviceId.isBlank() && pair.deviceId.isNotBlank()) {
+                    ConnectionStore.upsert(
+                        this,
+                        hit.copy(deviceId = pair.deviceId, name = hit.name.ifBlank { pair.name }),
+                    )
+                }
+            } else {
+                ConnectionStore.upsert(
+                    this,
+                    Connection(id = "", name = pair.name, url = url, deviceId = pair.deviceId),
+                )
+            }
+        }
+        refreshConnections()
+        // Wi-Fi 上先走局域网、其它网络先走 Tailscale —— 与连接页的自动选路同一套判断
+        val onWifi = AutoRoute.onWifi(this)
+        val target = urls.firstOrNull { AutoRoute.isLanUrl(it) == onWifi } ?: urls.first()
+        connect(target)
+    }
 
     /** @param url 来自连接页的输入；为 null 表示沿用已保存的地址。 */
     private fun connect(url: String?) {

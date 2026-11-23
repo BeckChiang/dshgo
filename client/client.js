@@ -6626,6 +6626,19 @@ window.__ModuleLoader__.load({
             : h('div', { style: styles.muted },
                 L('没检测到。装好 Tailscale 并登录后，这里会出现一个 100.x 地址。',
                   'Not detected. After installing Tailscale and signing in, a 100.x address shows up here.')),
+
+          // 两条通道合成一张码：换手机时扫一次就都加好，不用一地址一次。
+          info && info.pair && qr[info.pair]
+            ? h('div', { style: { ...styles.subTitle, marginTop: 14 } },
+                L('一次添加全部地址', 'Add all addresses at once'))
+            : null,
+          info && info.pair && qr[info.pair]
+            ? h('div', { style: { display: 'flex', gap: 12, alignItems: 'center' } },
+                qrNode(qr[info.pair], 132),
+                h('div', { style: { ...styles.muted, minWidth: 0 } },
+                  L('用 Fnh Go 扫这张：局域网和 Tailscale 两条通道一起加进设备列表，App 之后会按当前网络自动挑能用的那条。',
+                    'Scan this with Fnh Go: both the LAN and Tailscale channels are added at once, then the app picks whichever works on the current network.')))
+            : null,
         ),
 
         // 4) 手机 App（下载指向本项目仓库）

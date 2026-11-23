@@ -317,6 +317,31 @@ test('端点响应体：addrs.lan 不再把虚拟网卡算成局域网', async (
   assert.deepEqual(info.tailscale, ['http://100.75.57.100:3081']);
 });
 
+test('两条地址时给出「一次添加全部地址」的扫码载荷', async () => {
+  const nets = [
+    { name: 'WLAN', address: '192.168.31.221' },
+    { name: 'Tailscale', address: '100.75.57.100' },
+  ];
+  const info = await buildInfoPayload({ port: 3081, upstreamPort: 3080 }, nets);
+
+  assert.ok(info.pair.startsWith('{'), 'pair 是一段 JSON 字符串');
+  const payload = JSON.parse(info.pair);
+  assert.equal(payload.dshgo, 2, '带格式版本，App 据此识别');
+  assert.deepEqual(payload.urls, info.addresses, '载荷里的地址与 addresses 一致');
+  assert.equal(payload.deviceId, info.deviceId);
+  assert.equal(payload.name, info.deviceName);
+  assert.ok(info.qrcodes[info.pair].startsWith('<svg'), '载荷本身也有二维码');
+
+  // 只有一条地址时不给合并码：多一步选择没有意义
+  const one = await buildInfoPayload({ port: 3081, upstreamPort: 3080 }, [nets[0]]);
+  assert.equal(one.pair, '');
+  assert.equal(one.qrcodes[one.pair], undefined, '没有载荷就不该有对应二维码');
+
+  // 没监听时同样不给
+  const down = await buildInfoPayload({ port: null, upstreamPort: 3080 }, nets);
+  assert.equal(down.pair, '');
+});
+
 test('端点响应体：区分「代理在跑」和「代理没跑」', async () => {
   const nets = [
     { name: 'en0', address: '192.168.0.21' },
